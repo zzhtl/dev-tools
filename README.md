@@ -1,2 +1,2 @@
 # dev-tools
-rust tarui编写的桌面&amp;web端工具类
+rust tauri编写的桌面&amp;web端工具类
