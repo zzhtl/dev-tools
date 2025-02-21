@@ -1,3 +1,2 @@
 *.rs linguist-language=Rust 
-*.svelte linguist-language=Svelte
 *.ts linguist-language=TypeScript
