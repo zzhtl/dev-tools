@@ -30,15 +30,24 @@
             outputText = encrypted || "加密失败"; // 如果加密失败，返回默认值
         } else if (selectedAlgorithm === "DES") {
             // 使用 DES 加密
-            const cipher = CryptoJS.DES.encrypt(inputText, privateKey).toString();
+            const cipher = CryptoJS.DES.encrypt(
+                inputText,
+                privateKey,
+            ).toString();
             outputText = cipher;
         } else if (selectedAlgorithm === "Blowfish") {
             // 使用 Blowfish 加密
-            const cipher = CryptoJS.Blowfish.encrypt(inputText, privateKey).toString();
+            const cipher = CryptoJS.Blowfish.encrypt(
+                inputText,
+                privateKey,
+            ).toString();
             outputText = cipher;
         } else {
             // 使用 AES 加密
-            const cipher = CryptoJS.AES.encrypt(inputText, privateKey).toString();
+            const cipher = CryptoJS.AES.encrypt(
+                inputText,
+                privateKey,
+            ).toString();
             outputText = cipher;
         }
     };
@@ -74,6 +83,18 @@
     const requiresPublicKey = (algorithm: string) => {
         return algorithm === "RSA";
     };
+
+    // 验证密钥格式（增强版）
+    const validateKey = (key: string, type: 'public' | 'private') => {
+        if (!key) {
+            alert(`请${type === 'public' ? '输入或生成' : '生成'}RSA${type === 'public' ? '公钥' : '私钥'}`);
+            return false;
+        }
+        const keyPattern = type === 'public' 
+            ? /-----BEGIN PUBLIC KEY-----/ 
+            : /-----BEGIN RSA PRIVATE KEY-----/;
+        return keyPattern.test(key);
+    };
 </script>
 
 <div class="container">
@@ -88,11 +109,15 @@
                 placeholder="输入公钥"
             />
         {/if}
-        <input
-            class="key-input"
-            bind:value={privateKey}
-            placeholder="输入密钥"
-        />
+        <div class="key-section">
+            <label>解密私钥：</label>
+            <textarea
+                class="private-key-input key-input"
+                bind:value={privateKey}
+                placeholder="自动生成的私钥（请妥善保存）"
+                readonly
+            ></textarea>
+        </div>
         {#if selectedAlgorithm === "RSA"}
             <button on:click={generateRSAKeyPair}>生成 RSA 密钥对</button>
         {/if}
