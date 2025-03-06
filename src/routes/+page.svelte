@@ -2,6 +2,7 @@
   import JsonTool from "./json_tool/json_tool.svelte";
   import CronTool from "./cron_tool/cron_tool.svelte";
   import CryptoTool from "./crypto_tool/crypto_tool.svelte";
+  import CmdLinux from "./cmd_linux/cmd_linux.svelte";
 
   let activeTab = $state("jsonTool");
 </script>
@@ -20,6 +21,10 @@
       class:active={activeTab === "cryptoTool"}
       on:click={() => (activeTab = "cryptoTool")}>编码加解密</button
     >
+    <button
+      class:active={activeTab === "cmdLinux"}
+      on:click={() => (activeTab = "cmdLinux")}>linux命令搜索</button
+    >
   </div>
 
   {#if activeTab === "jsonTool"}
@@ -28,6 +33,8 @@
     <CronTool />
   {:else if activeTab === "cryptoTool"}
     <CryptoTool />
+  {:else if activeTab === "cmdLinux"}
+    <CmdLinux />
   {/if}
 </main>
 
