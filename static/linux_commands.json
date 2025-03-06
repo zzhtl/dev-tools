@@ -1,0 +1,43 @@
+{
+  "categories": [
+    {
+      "name": "文件操作",
+      "commands": [
+        {"command": "ls", "description": "列出目录内容", "pinyin": ["lswg"], "examples": ["ls -l", "ls -a"]},
+        {"command": "cp", "description": "复制文件", "pinyin": ["fzwj"], "examples": ["cp file.txt backup/", "cp -r dir new_dir"]},
+        {"command": "mv", "description": "移动/重命名", "pinyin": ["yd","czm"], "examples": ["mv old.txt new.txt", "mv dir/ /path"]},
+        {"command": "rm", "description": "删除文件", "pinyin": ["scwj"], "examples": ["rm file.txt", "rm -rf dir/"]},
+        {"command": "mkdir", "description": "创建目录", "pinyin": ["cjml"], "examples": ["mkdir new_dir", "mkdir -p path/to/dir"]}
+      ]
+    },
+    {
+      "name": "系统监控",
+      "commands": [
+        {"command": "top", "description": "实时进程监控", "pinyin": ["ssjk"], "examples": ["top", "top -u user"]},
+        {"command": "htop", "description": "增强型监控", "pinyin": ["zqxj"], "examples": ["htop", "htop -d 10"]},
+        {"command": "ps", "description": "进程快照", "pinyin": ["jckz"], "examples": ["ps aux", "ps -ef"]},
+        {"command": "free", "description": "内存使用", "pinyin": ["ncsy"], "examples": ["free -h", "free -m"]},
+        {"command": "df", "description": "磁盘空间", "pinyin": ["cpkj"], "examples": ["df -h", "df -i"]}
+      ]
+    },
+    {
+      "name": "网络管理",
+      "commands": [
+        {"command": "curl", "description": "数据传输工具", "pinyin": ["sjcs"], "examples": ["curl example.com", "curl -O file.zip"]},
+        {"command": "wget", "description": "文件下载", "pinyin": ["wjxz"], "examples": ["wget url", "wget -c url"]},
+        {"command": "ssh", "description": "安全连接", "pinyin": ["aqlj"], "examples": ["ssh user@host", "ssh -p 2222 host"]},
+        {"command": "ping", "description": "网络测试", "pinyin": ["wlcs"], "examples": ["ping example.com", "ping -c 4 ip"]},
+        {"command": "netstat", "description": "网络状态", "pinyin": ["wlzt"], "examples": ["netstat -tulpn", "netstat -an"]}
+      ]
+    },
+    {
+      "name": "权限管理",
+      "commands": [
+        {"command": "chmod", "description": "修改权限", "pinyin": ["xgqx"], "examples": ["chmod 755 file", "chmod +x script"]},
+        {"command": "chown", "description": "修改所有者", "pinyin": ["xgsyz"], "examples": ["chown user:group file", "chown -R user dir/"]},
+        {"command": "sudo", "description": "提权执行", "pinyin": ["tqzx"], "examples": ["sudo apt update", "sudo -i"]},
+        {"command": "passwd", "description": "修改密码", "pinyin": ["xgmm"], "examples": ["passwd", "passwd username"]}
+      ]
+    }
+  ]
+}
