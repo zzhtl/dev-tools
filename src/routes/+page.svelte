@@ -3,6 +3,7 @@
   import CronTool from "./cron_tool/cron_tool.svelte";
   import CryptoTool from "./crypto_tool/crypto_tool.svelte";
   import CmdLinux from "./cmd_linux/cmd_linux.svelte";
+  import TimeConvert from "./time_tool/time_convert.svelte";
 
   let activeTab = $state("jsonTool");
 </script>
@@ -25,6 +26,10 @@
       class:active={activeTab === "cmdLinux"}
       on:click={() => (activeTab = "cmdLinux")}>linux命令搜索</button
     >
+    <button
+      class:active={activeTab === "timeConvert"}
+      on:click={() => (activeTab = "timeConvert")}>时间转换</button
+    >
   </div>
 
   {#if activeTab === "jsonTool"}
@@ -35,6 +40,8 @@
     <CryptoTool />
   {:else if activeTab === "cmdLinux"}
     <CmdLinux />
+  {:else if activeTab === "timeConvert"}
+    <TimeConvert />
   {/if}
 </main>
 
