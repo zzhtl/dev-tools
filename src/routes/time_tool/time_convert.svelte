@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { tick } from "svelte";
     let activeTab = "timestampToDate";
     let timestamp = "";
     let dateString = "";
@@ -15,25 +14,20 @@
         "Asia/Tokyo",
     ];
 
-    // 统一处理输入变化
-    const handleInput = async (type: "timestamp" | "date") => {
-        await tick(); // 等待 Svelte 更新 DOM
-
-        if (type === "timestamp") {
-            dateString = ""; // 清除日期输入
-        } else {
-            timestamp = ""; // 清除时间戳输入
-        }
-
-        try {
-            if (activeTab === "timestampToDate" && timestamp) {
+    // 响应式处理所有转换逻辑
+    $: {
+        if (activeTab === "timestampToDate" && timestamp) {
+            try {
                 const numericTimestamp =
                     unit === "seconds"
                         ? parseInt(timestamp) * 1000
                         : parseInt(timestamp);
-                const date = new Date(numericTimestamp);
 
-                // 格式化为 yyyy-MM-dd HH:mm:ss.SSS
+                if (isNaN(numericTimestamp)) {
+                    result = "错误: 无效的时间戳";
+                }
+
+                const date = new Date(numericTimestamp);
                 const year = date.getFullYear();
                 const month = String(date.getMonth() + 1).padStart(2, "0");
                 const day = String(date.getDate()).padStart(2, "0");
@@ -46,18 +40,37 @@
                 );
 
                 result = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`;
-            } else if (activeTab === "dateToTimestamp" && dateString) {
-                const date = new Date(dateString);
-                const ts =
-                    unit === "seconds"
-                        ? Math.floor(date.getTime() / 1000)
-                        : date.getTime();
-                result = ts.toString();
+            } catch (e) {
+                result = `错误: ${(e as Error).message}`;
             }
-        } catch (e) {
-            result = `错误: ${(e as Error).message}`;
+        } else if (activeTab === "dateToTimestamp" && dateString) {
+            try {
+                const date = new Date(dateString);
+
+                if (isNaN(date.getTime())) {
+                    result = "错误: 无效的日期格式";
+                }
+
+                result =
+                    unit === "seconds"
+                        ? Math.floor(date.getTime() / 1000).toString()
+                        : date.getTime().toString();
+            } catch (e) {
+                result = `错误: ${(e as Error).message}`;
+            }
+        } else {
+            result = "";
         }
-    };
+    }
+
+    // 清空另一方的输入
+    function clearOppositeInput(type: "timestamp" | "date") {
+        if (type === "timestamp") {
+            dateString = "";
+        } else {
+            timestamp = "";
+        }
+    }
 </script>
 
 <div class="container">
@@ -84,7 +97,7 @@
                 <input
                     type="text"
                     bind:value={timestamp}
-                    on:input={() => handleInput("timestamp")}
+                    on:input={() => clearOppositeInput("timestamp")}
                     placeholder="输入时间戳（如 1717027200）"
                 />
                 <select bind:value={unit}>
@@ -95,21 +108,11 @@
         </div>
     {:else}
         <!-- 日期转时间戳 -->
-        <!-- <div class="converter-section">
-            <div class="input-group">
-                <input
-                    type="datetime-local"
-                    bind:value={dateString}
-                    on:input={() => handleInput("date")}
-                    class="custom-datetime"
-                />
-            </div>
-        </div> -->
         <div class="date-picker">
             <input
                 type="datetime-local"
                 bind:value={dateString}
-                on:input={() => handleInput("date")}
+                on:input={() => clearOppositeInput("date")}
                 class="modern-date-input"
                 step="1"
             />
@@ -117,7 +120,7 @@
                 <span class="icon">📅</span>
                 <div class="datetime-display">
                     {#if dateString}
-                        {dateString}
+                        {new Date(dateString).toLocaleString()}
                     {:else}
                         <span class="placeholder">选择日期和时间</span>
                     {/if}
@@ -155,6 +158,7 @@
             <button
                 on:click={() => navigator.clipboard.writeText(result)}
                 title="复制结果"
+                disabled={!result || result.startsWith("错误")}
             >
                 📋
             </button>

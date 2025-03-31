@@ -85,14 +85,17 @@
     };
 
     // 验证密钥格式（增强版）
-    const validateKey = (key: string, type: 'public' | 'private') => {
+    const validateKey = (key: string, type: "public" | "private") => {
         if (!key) {
-            alert(`请${type === 'public' ? '输入或生成' : '生成'}RSA${type === 'public' ? '公钥' : '私钥'}`);
+            alert(
+                `请${type === "public" ? "输入或生成" : "生成"}RSA${type === "public" ? "公钥" : "私钥"}`,
+            );
             return false;
         }
-        const keyPattern = type === 'public' 
-            ? /-----BEGIN PUBLIC KEY-----/ 
-            : /-----BEGIN RSA PRIVATE KEY-----/;
+        const keyPattern =
+            type === "public"
+                ? /-----BEGIN PUBLIC KEY-----/
+                : /-----BEGIN RSA PRIVATE KEY-----/;
         return keyPattern.test(key);
     };
 </script>
