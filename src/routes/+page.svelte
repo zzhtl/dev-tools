@@ -12,126 +12,117 @@
   <div class="tabs">
     <button
       class:active={activeTab === "jsonTool"}
-      on:click={() => (activeTab = "jsonTool")}>JSON Tool</button
+      on:click={() => (activeTab = "jsonTool")}
+      class="tab-button"
+      >JSON Tool</button
     >
     <button
       class:active={activeTab === "cronTool"}
-      on:click={() => (activeTab = "cronTool")}>Cron表达式</button
+      on:click={() => (activeTab = "cronTool")}
+      class="tab-button"
+      >Cron表达式</button
     >
     <button
       class:active={activeTab === "cryptoTool"}
-      on:click={() => (activeTab = "cryptoTool")}>编码加解密</button
+      on:click={() => (activeTab = "cryptoTool")}
+      class="tab-button"
+      >编码加解密</button
     >
     <button
       class:active={activeTab === "cmdLinux"}
-      on:click={() => (activeTab = "cmdLinux")}>linux命令搜索</button
+      on:click={() => (activeTab = "cmdLinux")}
+      class="tab-button"
+      >Linux命令搜索</button
     >
     <button
       class:active={activeTab === "timeConvert"}
-      on:click={() => (activeTab = "timeConvert")}>时间转换</button
+      on:click={() => (activeTab = "timeConvert")}
+      class="tab-button"
+      >时间转换</button
     >
   </div>
 
-  {#if activeTab === "jsonTool"}
-    <JsonTool />
-  {:else if activeTab === "cronTool"}
-    <CronTool />
-  {:else if activeTab === "cryptoTool"}
-    <CryptoTool />
-  {:else if activeTab === "cmdLinux"}
-    <CmdLinux />
-  {:else if activeTab === "timeConvert"}
-    <TimeConvert />
-  {/if}
+  <div class="content">
+    {#if activeTab === "jsonTool"}
+      <JsonTool />
+    {:else if activeTab === "cronTool"}
+      <CronTool />
+    {:else if activeTab === "cryptoTool"}
+      <CryptoTool />
+    {:else if activeTab === "cmdLinux"}
+      <CmdLinux />
+    {:else if activeTab === "timeConvert"}
+      <TimeConvert />
+    {/if}
+  </div>
 </main>
 
 <style>
   :root {
-    font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-    font-size: 16px;
-    line-height: 24px;
-    font-weight: 400;
-
-    color: #0f0f0f;
-    background-color: #f6f6f6;
-
-    font-synthesis: none;
-    text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    -webkit-text-size-adjust: 100%;
+    --primary-color: #4f46e5;
+    --primary-light: #6366f1;
+    --text-color: #111827;
+    --bg-color: #f9fafb;
+    --card-bg: #ffffff;
+    --border-radius: 8px;
+    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   }
 
   .container {
-    margin: 0;
-    padding-top: 10px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    text-align: center;
+    margin: 0 auto;
+    max-width: 960px;
+    padding: 2rem;
+    background: var(--bg-color);
+    min-height: 100vh;
   }
 
   .tabs {
     display: flex;
     justify-content: center;
-    gap: 10px;
-    margin-bottom: 10px;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    overflow-x: auto;
+    padding-bottom: 0.5rem;
+  }
+  .tabs::-webkit-scrollbar {
+    display: none;
   }
 
-  .tabs button {
-    padding: 12px 24px;
+  .tab-button {
+    background: transparent;
     border: none;
-    border-radius: 8px;
-    background-color: #fff;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-color);
+    padding: 0.75rem 1.5rem;
     cursor: pointer;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     transition: all 0.3s ease;
+    border-radius: var(--border-radius);
   }
 
-  .tabs button.active {
-    background-color: #396cd8;
-    color: #fff;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  .tab-button.active {
+    color: var(--primary-color);
+    background: rgba(79, 70, 229, 0.1);
   }
 
-  .tabs button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  .tab-button:hover {
+    color: var(--primary-light);
+    background: rgba(99, 102, 241, 0.1);
   }
 
-  .tabs button:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-
-  button {
-    cursor: pointer;
-  }
-
-  button:hover {
-    border-color: #396cd8;
-  }
-  button:active {
-    border-color: #396cd8;
-    background-color: #e8e8e8;
-  }
-
-  button {
-    outline: none;
+  .content {
+    background: var(--card-bg);
+    padding: 2rem;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    min-height: 400px;
   }
 
   @media (prefers-color-scheme: dark) {
     :root {
-      color: #f6f6f6;
-      background-color: #2f2f2f;
-    }
-
-    button {
-      color: #ffffff;
-      background-color: #0f0f0f98;
-    }
-    button:active {
-      background-color: #0f0f0f69;
+      --bg-color: #1f2937;
+      --text-color: #f3f4f6;
+      --card-bg: #111827;
     }
   }
 </style>
