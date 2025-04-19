@@ -1,17 +1,45 @@
-# Tauri + SvelteKit + TypeScript
-该项目基于Tauri + SvelteKit + TypeScript，是一个简单的桌面应用。  
-项目包含：JSON工具、cron表达式工具、编码加密工具等功能。后面会持续添加功能。
+# Dev Tools - 开发者工具集
 
-# 创建tauri项目
-参考：https://tauri.app/zh-cn/start/  
-cargo install create-tauri-app --locked  
-cargo create-tauri-app  
+基于Tauri + SvelteKit + TypeScript构建的桌面应用，提供多种实用开发工具。
 
-# 构建项目
-cd dev-tools  
-pnpm install  
-cargo tauri dev  
+## 🛠️ 功能列表
 
-## Recommended IDE Setup
+| 工具名称       | 功能描述                     | 图标 |
+|----------------|----------------------------|------|
+| JSON工具       | JSON格式化/压缩/验证        | 📋   |
+| Cron表达式     | Cron表达式解析和验证        | ⏰   |
+| 编码加解密      | 常见编码转换和加解密工具     | 🔒   |
+| Linux命令      | 常用Linux命令查询           | 💻   |
+| 时间转换        | 时间戳与日期格式互转        | 🕒   |
+| 二维码生成      | 文本生成二维码图片          | 📱   |
+| 图片转Base64   | 图片与Base64互转            | 📊   |
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
+## 🚀 技术栈
+
+- 前端框架: [SvelteKit](https://kit.svelte.dev/)
+- UI组件: 原生CSS
+- 打包工具: [Tauri](https://tauri.app/)
+- 开发语言: TypeScript + Rust
+
+## ⚙️ 开发环境搭建
+
+```bash
+# 安装依赖
+pnpm install
+
+# 开发模式运行
+cargo tauri dev
+
+# 生产环境构建
+cargo tauri build
+```
+
+## 📦 项目结构
+rc/
+├── lib/ # 共享工具函数
+├── routes/
+│ ├── [tool]/
+│ │ ├── +page.svelte # 工具主界面
+│ │ └── utils.ts # 工具专用逻辑
+├── app.html # 主入口
+└── +page.svelte # 导航框架
