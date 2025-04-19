@@ -37,4 +37,4 @@ cargo tauri build
 
 ## 📦 下载安装
 
-最新版本的可执行文件包可以从 [GitHub Releases](https://github.com/zzhtl/dev-tools/releases/tag/v0.1.0) 下载。
+最新版本的可执行文件包可以从 [GitHub Releases](https://github.com/zzhtl/dev-tools/releases) 下载。
