@@ -72,7 +72,7 @@
                         {#each presets as preset}
                             <button
                                 class:active={cronExpression === preset.value}
-                                on:click={() => (cronExpression = preset.value)}
+                                onclick={() => (cronExpression = preset.value)}
                             >
                                 {preset.icon}
                                 {preset.label}
@@ -82,10 +82,11 @@
                 </div>
 
                 <div class="input-wrapper">
-                    <input
+                    <input style="height: 1.5rem;"
                         bind:value={cronExpression}
                         class:error={!!errorMessage}
                         placeholder="例如: 0 9 * * 1-5"
+                        class="tall-input"
                     />
                     {#if isLoading}
                         <div class="loader"></div>
@@ -110,7 +111,7 @@
                             <span class="index">#{i + 1}</span>
                             <span class="time">{time}</span>
                             <button
-                                on:click={() =>
+                                onclick={() =>
                                     navigator.clipboard.writeText(time)}
                                 title="复制"
                             >
@@ -224,9 +225,12 @@
     .input-wrapper {
         position: relative;
 
-        input {
+        .tall-input {
             width: 100%;
-            padding: 1rem;
+            height: 4rem;
+            padding: 1.2rem;
+            font-size: 1.1rem;
+            line-height: 1.5;
             border: 2px solid #e2e8f0;
             border-radius: var(--radius);
             background: var(--surface);
@@ -239,9 +243,10 @@
 
         .loader {
             position: absolute;
+            top: 2.2rem;
             right: 1rem;
-            top: 50%;
-            transform: translateY(-50%);
+            left: auto;
+            transform: none;
             width: 20px;
             height: 20px;
             border: 2px solid #e2e8f0;
