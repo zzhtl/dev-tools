@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { save } from '@tauri-apps/plugin-dialog';
+    import { writeFile } from '@tauri-apps/plugin-fs';
     import QRCode from "qrcode";
     import { onMount } from "svelte";
   
@@ -12,8 +14,24 @@
           margin: 2,
         });
       } catch (err) {
-        console.error("Failed to generate QR code:", err);
+        console.error("生成二维码失败:", err);
       }
+    };
+  
+    /** 纯浏览器实现下载二维码 */
+    const saveQRCode = async () => {
+      if (!qrCodeUrl) return;
+      // 弹出保存对话框，选择保存位置
+      const filePath = await save({
+        defaultPath: 'qrcode.png',
+        filters: [{ name: 'Image', extensions: ['png'] }]
+      });
+      if (!filePath) return;
+      // 解析 Base64 数据
+      const base64Data = qrCodeUrl.split(',')[1];
+      const binary = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+      // 使用 Tauri 插件写入二进制文件
+      await writeFile(filePath, binary);
     };
   
     onMount(() => {
@@ -36,6 +54,9 @@
     {#if qrCodeUrl}
       <div class="qr-code-container">
         <img src={qrCodeUrl} alt="生成的二维码" />
+        <div class="button-container">
+          <button class="download-btn" onclick={saveQRCode}>保存二维码</button>
+        </div>
       </div>
     {/if}
   </div>
@@ -79,6 +100,16 @@
     .qr-code-container {
       margin-top: 1rem;
       text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+  
+    .button-container {
+      width: 100%;
+      display: flex;
+      justify-content: center;
     }
   
     img {
@@ -86,5 +117,21 @@
       height: auto;
       border: 1px solid #eee;
       border-radius: 4px;
+    }
+  
+    .download-btn {
+      padding: 0.5rem 1rem;
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.3s ease;
+      font-size: 1rem;
+      width: auto;
+    }
+  
+    .download-btn:hover {
+      background: var(--primary-light);
     }
   </style>
