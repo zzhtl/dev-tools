@@ -4,6 +4,7 @@
   import CryptoTool from "./crypto_tool/crypto_tool.svelte";
   import CmdLinux from "./cmd_linux/cmd_linux.svelte";
   import TimeConvert from "./time_tool/time_convert.svelte";
+  import QrCodeTool from "./qrcode_tool/qrcode_tool.svelte";
 
   let activeTab = $state("jsonTool");
 </script>
@@ -12,33 +13,39 @@
   <div class="tabs">
     <button
       class:active={activeTab === "jsonTool"}
-      on:click={() => (activeTab = "jsonTool")}
+      onclick={() => (activeTab = "jsonTool")}
       class="tab-button"
       >JSON Tool</button
     >
     <button
       class:active={activeTab === "cronTool"}
-      on:click={() => (activeTab = "cronTool")}
+      onclick={() => (activeTab = "cronTool")}
       class="tab-button"
       >Cron表达式</button
     >
     <button
       class:active={activeTab === "cryptoTool"}
-      on:click={() => (activeTab = "cryptoTool")}
+      onclick={() => (activeTab = "cryptoTool")}
       class="tab-button"
       >编码加解密</button
     >
     <button
       class:active={activeTab === "cmdLinux"}
-      on:click={() => (activeTab = "cmdLinux")}
+      onclick={() => (activeTab = "cmdLinux")}
       class="tab-button"
       >Linux命令搜索</button
     >
     <button
       class:active={activeTab === "timeConvert"}
-      on:click={() => (activeTab = "timeConvert")}
+      onclick={() => (activeTab = "timeConvert")}
       class="tab-button"
       >时间转换</button
+    >
+    <button
+      class:active={activeTab === "qrCodeTool"}
+      onclick={() => (activeTab = "qrCodeTool")}
+      class="tab-button"
+      >二维码生成</button
     >
   </div>
 
@@ -53,6 +60,8 @@
       <CmdLinux />
     {:else if activeTab === "timeConvert"}
       <TimeConvert />
+    {:else if activeTab === "qrCodeTool"}
+      <QrCodeTool />
     {/if}
   </div>
 </main>
