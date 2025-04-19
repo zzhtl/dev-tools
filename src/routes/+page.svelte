@@ -5,48 +5,33 @@
   import CmdLinux from "./cmd_linux/cmd_linux.svelte";
   import TimeConvert from "./time_tool/time_convert.svelte";
   import QrCodeTool from "./qrcode_tool/qrcode_tool.svelte";
-
+  import Base64Tool from "./base64_tool/base64_tool.svelte";
+  
   let activeTab = $state("jsonTool");
+  
+  const tools = [
+    { id: "jsonTool", name: "JSON工具", emoji: "📋" },
+    { id: "cronTool", name: "Cron表达式", emoji: "⏰" },
+    { id: "cryptoTool", name: "编码加解密", emoji: "🔒" },
+    { id: "cmdLinux", name: "Linux命令", emoji: "💻" },
+    { id: "timeConvert", name: "时间转换", emoji: "🕒" },
+    { id: "qrCodeTool", name: "二维码生成", emoji: "📱" },
+    { id: "base64Tool", name: "图片转Base64", emoji: "📊" }
+  ];
 </script>
 
 <main class="container">
-  <div class="tabs">
-    <button
-      class:active={activeTab === "jsonTool"}
-      onclick={() => (activeTab = "jsonTool")}
-      class="tab-button"
-      >JSON Tool</button
-    >
-    <button
-      class:active={activeTab === "cronTool"}
-      onclick={() => (activeTab = "cronTool")}
-      class="tab-button"
-      >Cron表达式</button
-    >
-    <button
-      class:active={activeTab === "cryptoTool"}
-      onclick={() => (activeTab = "cryptoTool")}
-      class="tab-button"
-      >编码加解密</button
-    >
-    <button
-      class:active={activeTab === "cmdLinux"}
-      onclick={() => (activeTab = "cmdLinux")}
-      class="tab-button"
-      >Linux命令搜索</button
-    >
-    <button
-      class:active={activeTab === "timeConvert"}
-      onclick={() => (activeTab = "timeConvert")}
-      class="tab-button"
-      >时间转换</button
-    >
-    <button
-      class:active={activeTab === "qrCodeTool"}
-      onclick={() => (activeTab = "qrCodeTool")}
-      class="tab-button"
-      >二维码生成</button
-    >
+  <div class="sidebar">
+    {#each tools as tool}
+      <button
+        class:active={activeTab === tool.id}
+        onclick={() => (activeTab = tool.id)}
+        class="menu-button"
+      >
+        <span class="emoji-icon">{tool.emoji}</span>
+        <span class="name">{tool.name}</span>
+      </button>
+    {/each}
   </div>
 
   <div class="content">
@@ -62,6 +47,8 @@
       <TimeConvert />
     {:else if activeTab === "qrCodeTool"}
       <QrCodeTool />
+    {:else if activeTab === "base64Tool"}
+      <Base64Tool />
     {/if}
   </div>
 </main>
@@ -70,6 +57,7 @@
   :root {
     --primary-color: #4f46e5;
     --primary-light: #6366f1;
+    --sidebar-width: 150px;
     --text-color: #111827;
     --bg-color: #f9fafb;
     --card-bg: #ffffff;
@@ -78,53 +66,61 @@
   }
 
   .container {
-    margin: 0 auto;
-    max-width: 960px;
-    padding: 2rem;
-    background: var(--bg-color);
-    min-height: 100vh;
-  }
-
-  .tabs {
     display: flex;
-    justify-content: center;
-    gap: 1rem;
-    margin-bottom: 2rem;
-    overflow-x: auto;
-    padding-bottom: 0.5rem;
-  }
-  .tabs::-webkit-scrollbar {
-    display: none;
+    min-height: 100vh;
+    background: var(--bg-color);
   }
 
-  .tab-button {
+  .sidebar {
+    width: var(--sidebar-width);
+    padding: 1rem;
+    background: var(--card-bg);
+    border-right: 1px solid #eee;
+    overflow-y: auto;
+  }
+
+  .menu-button {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
     background: transparent;
     border: none;
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-color);
-    padding: 0.75rem 1.5rem;
+    border-radius: var(--border-radius);
     cursor: pointer;
     transition: all 0.3s ease;
-    border-radius: var(--border-radius);
+    text-align: left;
+    gap: 12px;
   }
 
-  .tab-button.active {
-    color: var(--primary-color);
-    background: rgba(79, 70, 229, 0.1);
-  }
-
-  .tab-button:hover {
-    color: var(--primary-light);
+  .menu-button:hover {
     background: rgba(99, 102, 241, 0.1);
   }
 
+  .menu-button.active {
+    background: rgba(79, 70, 229, 0.1);
+    color: var(--primary-color);
+  }
+
+  .emoji-icon {
+    font-size: 1.2rem;
+    width: 24px;
+    text-align: center;
+  }
+
+  .name {
+    font-weight: 600;
+  }
+
   .content {
-    background: var(--card-bg);
+    flex: 1;
     padding: 2rem;
+    background: var(--card-bg);
     border-radius: var(--border-radius);
     box-shadow: var(--shadow);
-    min-height: 400px;
+    margin: 1rem;
+    min-height: calc(100vh - 2rem);
   }
 
   @media (prefers-color-scheme: dark) {
