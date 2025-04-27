@@ -8,6 +8,7 @@
   import Base64Tool from "./base64_tool/base64_tool.svelte";
   import DnsTool from "./dns_tool/dns_tool.svelte";
   import RegexTool from "./regex_tool/regex_tool.svelte";
+  import HtmlTool from "./html_tool/html_tool.svelte";
   let activeTab = $state("jsonTool");
   
   const tools = [
@@ -19,7 +20,8 @@
     { id: "qrCodeTool", name: "二维码生成", emoji: "📱" },
     { id: "base64Tool", name: "图片转Base64", emoji: "📊" },
     { id: "dnsTool", name: "DNS解析", emoji: "🔍" },
-    { id: "regexTool", name: "正则表达式", emoji: "🔠" }
+    { id: "regexTool", name: "正则表达式", emoji: "🔠" },
+    { id: "htmlTool", name: "HTML工具", emoji: "🌐" }
   ];
 </script>
 
@@ -56,6 +58,8 @@
       <DnsTool />
     {:else if activeTab === "regexTool"}
       <RegexTool />
+    {:else if activeTab === "htmlTool"}
+      <HtmlTool />
     {/if}
   </div>
 </main>
