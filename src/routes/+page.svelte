@@ -9,6 +9,7 @@
   import DnsTool from "./dns_tool/dns_tool.svelte";
   import RegexTool from "./regex_tool/regex_tool.svelte";
   import HtmlTool from "./html_tool/html_tool.svelte";
+  import ColorTool from "./color_tool/color_tool.svelte";
   let activeTab = $state("jsonTool");
   
   const tools = [
@@ -21,7 +22,8 @@
     { id: "base64Tool", name: "图片转Base64", emoji: "📊" },
     { id: "dnsTool", name: "DNS解析", emoji: "🔍" },
     { id: "regexTool", name: "正则表达式", emoji: "🔠" },
-    { id: "htmlTool", name: "HTML工具", emoji: "🌐" }
+    { id: "htmlTool", name: "HTML工具", emoji: "🌐" },
+    { id: "colorTool", name: "颜色选择器", emoji: "🎨" }
   ];
 </script>
 
@@ -60,6 +62,8 @@
       <RegexTool />
     {:else if activeTab === "htmlTool"}
       <HtmlTool />
+    {:else if activeTab === "colorTool"}
+      <ColorTool />
     {/if}
   </div>
 </main>
