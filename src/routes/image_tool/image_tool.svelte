@@ -1,7 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { open, save } from "@tauri-apps/plugin-dialog";
-  import { exists } from "@tauri-apps/plugin-fs";
   import { convertFileSrc } from '@tauri-apps/api/core';
   
   interface ImageConversionResult {
@@ -25,7 +24,7 @@
     resize?: {
       width?: number;
       height?: number;
-      keepAspectRatio: boolean;
+      keep_aspect_ratio: boolean;
     };
   }
   
@@ -48,6 +47,10 @@
   let resizeHeight = $state<number | null>(null);
   let keepAspectRatio = $state<boolean>(true);
   
+  // ICO格式尺寸设置
+  let icoSize = $state<number>(32); // 默认32x32
+  const iconSizes = [16, 32, 48, 64, 128, 256];
+  
   // 选择图片文件
   async function selectImage() {
     try {
@@ -56,7 +59,7 @@
         multiple: false,
         filters: [{
           name: "图片",
-          extensions: ["jpg", "jpeg", "png", "gif", "webp", "bmp", "ico"]
+          extensions: ["jpg", "jpeg", "png", "gif", "webp", "bmp", "ico", "svg"]
         }]
       });
       
@@ -153,7 +156,14 @@
         options.resize = {
           width: resizeWidth || undefined,
           height: resizeHeight || undefined,
-          keepAspectRatio: keepAspectRatio
+          keep_aspect_ratio: keepAspectRatio
+        };
+      } else if (outputFormat === "ICO") {
+        // 如果是ICO格式，使用选择的尺寸设置为正方形
+        options.resize = {
+          width: icoSize,
+          height: icoSize,
+          keep_aspect_ratio: false
         };
       }
       
@@ -178,10 +188,17 @@
           }];
         }
         
-        successMessage = "图片转换成功";
+        let message = "图片转换成功";
+        if (outputFormat === "ICO") {
+          message = "图片已转换为ICO格式，我们使用了未压缩的ICO格式确保兼容性";
+        } else if (outputFormat === "SVG") {
+          message = "图片已转换为SVG格式(非矢量格式)";
+        }
+        
+        successMessage = message;
         setTimeout(() => {
           successMessage = null;
-        }, 3000);
+        }, 5000);
       } else {
         errorMessage = `转换失败: ${result.message}`;
         setTimeout(() => {
@@ -294,6 +311,8 @@
               <option value="GIF">GIF</option>
               <option value="WEBP">WEBP</option>
               <option value="BMP">BMP</option>
+              <option value="ICO">ICO</option>
+              <option value="SVG">SVG</option>
             </select>
           </div>
           
@@ -309,6 +328,37 @@
                 class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" 
                 bind:value={quality}
               />
+            </div>
+          {/if}
+          
+          {#if outputFormat === "ICO"}
+            <div class="mb-4">
+              <label class="block text-gray-700 text-sm font-bold mb-2">
+                图标尺寸:
+              </label>
+              <select 
+                class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                bind:value={icoSize}
+              >
+                {#each iconSizes as size}
+                  <option value={size}>{size} x {size}</option>
+                {/each}
+              </select>
+              <p class="text-xs text-gray-500 mt-1">ICO格式需要选择标准尺寸，用于网站图标和桌面图标</p>
+              <div class="text-xs text-blue-500 mt-1 p-2 bg-blue-50 rounded">
+                注意：我们使用未压缩格式创建ICO文件，确保最大兼容性。图标文件可能较大但能正常打开。
+              </div>
+            </div>
+          {/if}
+          
+          {#if outputFormat === "SVG"}
+            <div class="mb-4">
+              <p class="text-sm text-blue-500">
+                SVG格式将保存为嵌入PNG图像的SVG文件，非矢量格式
+              </p>
+              <p class="text-xs text-gray-500 mt-1">
+                注意：当前版本SVG转换是通过将图像嵌入SVG文件实现的
+              </p>
             </div>
           {/if}
           
@@ -400,7 +450,16 @@
         {#if result.success && (result.file_path || result.base64_data)}
           <div class="mb-2">
             {#if result.base64_data}
-              <img src={result.base64_data} alt="转换后图片" class="max-w-full h-auto mb-2 border" style="max-height: 300px;"/>
+              {#if result.base64_data.startsWith('data:image/svg+xml')}
+                <!-- SVG特殊处理，确保正确渲染 -->
+                <div class="border mb-2 p-2 bg-gray-50" style="max-height: 300px; overflow: auto;">
+                  <img src={result.base64_data} alt="转换后SVG图片" class="max-w-full h-auto" style="max-height: 280px;"/>
+                  <p class="text-xs text-blue-500 mt-2">SVG预览 - 此预览显示的是嵌入PNG数据的SVG文件</p>
+                </div>
+              {:else}
+                <!-- 其他图片格式正常显示 -->
+                <img src={result.base64_data} alt="转换后图片" class="max-w-full h-auto mb-2 border" style="max-height: 300px;"/>
+              {/if}
             {:else if result.file_path}
               <img src={convertFileSrc(result.file_path)} alt="转换后图片" class="max-w-full h-auto mb-2 border" style="max-height: 300px;"/>
             {/if}

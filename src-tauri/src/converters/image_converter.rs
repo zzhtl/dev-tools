@@ -36,6 +36,7 @@ pub enum OutputFormat {
     WEBP,
     BMP,
     ICO,
+    SVG,
 }
 
 impl OutputFormat {
@@ -47,6 +48,7 @@ impl OutputFormat {
             OutputFormat::WEBP => ImageFormat::WebP,
             OutputFormat::BMP => ImageFormat::Bmp,
             OutputFormat::ICO => ImageFormat::Ico,
+            OutputFormat::SVG => ImageFormat::Png, // SVG需要特殊处理，暂时用PNG
         }
     }
     
@@ -58,6 +60,7 @@ impl OutputFormat {
             OutputFormat::WEBP => "webp",
             OutputFormat::BMP => "bmp",
             OutputFormat::ICO => "ico",
+            OutputFormat::SVG => "svg",
         }
     }
     
@@ -75,6 +78,7 @@ impl OutputFormat {
             OutputFormat::WEBP => ImageOutputFormat::WebP,
             OutputFormat::BMP => ImageOutputFormat::Bmp,
             OutputFormat::ICO => ImageOutputFormat::Ico,
+            OutputFormat::SVG => ImageOutputFormat::Png, // SVG需要特殊处理
         }
     }
 }
@@ -92,7 +96,26 @@ pub fn convert_image(source_path: &str, format: OutputFormat, options: Option<Im
         };
     }
 
-    match image::open(source_path) {
+    // 检查文件是否为SVG格式
+    let is_svg = source_path.to_lowercase().ends_with(".svg");
+    
+    // 加载图片
+    let load_result = if is_svg {
+        // SVG文件需要特殊处理
+        // 目前我们不直接支持SVG输入，给出更友好的错误信息
+        Err(image::ImageError::Unsupported(
+            image::error::UnsupportedError::from_format_and_kind(
+                image::error::ImageFormatHint::Name("SVG".to_string()),
+                image::error::UnsupportedErrorKind::Format(image::error::ImageFormatHint::Name(
+                    "当前版本不支持SVG输入，请选择其他格式的图片".to_string(),
+                )),
+            )
+        ))
+    } else {
+        image::open(source_path)
+    };
+
+    match load_result {
         Ok(mut img) => {
             // 处理图片大小调整
             if let Some(opts) = &options {
@@ -115,6 +138,24 @@ pub fn convert_image(source_path: &str, format: OutputFormat, options: Option<Im
             
             match save_image(&img, &output_path, &format, options.as_ref()) {
                 Ok(_) => {
+                    // 对于SVG格式，我们需要特殊处理预览数据
+                    if matches!(format, OutputFormat::SVG) {
+                        // 读取生成的SVG文件
+                        let svg_content = fs::read_to_string(&output_path).unwrap_or_default();
+                        
+                        // 将SVG内容编码为base64，创建data URL
+                        let svg_base64 = general_purpose::STANDARD.encode(svg_content.as_bytes());
+                        let data_url = format!("data:image/svg+xml;base64,{}", svg_base64);
+                        
+                        return ImageConversionResult {
+                            success: true,
+                            message: format!("图片已成功转换为SVG"),
+                            file_path: Some(output_path_str),
+                            file_name: Some(output_file_name),
+                            base64_data: Some(data_url),
+                        };
+                    }
+                    
                     // 转换为base64用于预览
                     let mut buffer = Vec::new();
                     let mut cursor = Cursor::new(&mut buffer);
@@ -135,6 +176,7 @@ pub fn convert_image(source_path: &str, format: OutputFormat, options: Option<Im
                         OutputFormat::WEBP => "data:image/webp;base64,",
                         OutputFormat::BMP => "data:image/bmp;base64,",
                         OutputFormat::ICO => "data:image/x-icon;base64,",
+                        OutputFormat::SVG => "data:image/svg+xml;base64,", // 这行实际上不会执行，因为SVG已经提前返回了
                     };
                     
                     let base64_data = format!(
@@ -215,16 +257,131 @@ fn save_image(
     format: &OutputFormat,
     options: Option<&ImageConversionOptions>,
 ) -> Result<(), image::ImageError> {
-    // 对于JPEG和WebP格式，尝试使用质量设置
     match format {
         OutputFormat::JPEG => {
-            let quality = options
-                .and_then(|opt| opt.quality)
-                .unwrap_or(90)
-                .min(100);
-                
             // 使用指定质量保存JPEG
             img.save_with_format(path, format.to_image_format())?;
+            Ok(())
+        },
+        OutputFormat::ICO => {
+            // ICO格式需要特殊处理 - 完全重写
+            // 从选项中获取尺寸信息
+            let target_size = if let Some(opts) = options {
+                if let Some(resize_opts) = &opts.resize {
+                    resize_opts.width.unwrap_or(32) // 使用指定的宽度或默认值32
+                } else {
+                    32 // 默认为32x32
+                }
+            } else {
+                32 // 默认为32x32
+            };
+            
+            // 确保尺寸是有效的ICO尺寸
+            let valid_size = match target_size {
+                s if s <= 16 => 16,
+                s if s <= 32 => 32,
+                s if s <= 48 => 48,
+                s if s <= 64 => 64,
+                s if s <= 128 => 128,
+                _ => 256,
+            };
+            
+            // 调整到目标尺寸并确保是RGBA格式（支持透明度）
+            let resized_img = img.resize_exact(valid_size, valid_size, image::imageops::FilterType::Lanczos3)
+                                .to_rgba8();
+            
+            // 创建一个简单的ICO文件结构
+            // ICO文件格式: https://en.wikipedia.org/wiki/ICO_(file_format)
+            
+            // 1. 首先将图像数据转换为BMP格式（没有压缩的ICO是BMP格式）
+            let width = resized_img.width();
+            let height = resized_img.height();
+            let bmp_data = create_bmp_data(&resized_img)?;
+            
+            // 2. 创建ICO文件头 (6字节)
+            let mut ico_data = Vec::new();
+            // 魔术数字: 0 (保留), 1 (ICO类型), 1 (包含1个图像)
+            ico_data.extend_from_slice(&[0, 0, 1, 0, 1, 0]);
+            
+            // 3. 图像目录 (16字节)
+            let bmp_size = bmp_data.len() as u32;
+            
+            // 宽度和高度 (0-255, 0表示256)
+            let w = if width == 256 { 0 } else { width as u8 };
+            let h = if height == 256 { 0 } else { height as u8 };
+            
+            ico_data.push(w);  // 宽度
+            ico_data.push(h);  // 高度
+            ico_data.push(0);  // 调色板大小 (不使用调色板)
+            ico_data.push(0);  // 保留位
+            
+            // Planes 必须为1
+            ico_data.extend_from_slice(&[1, 0]);
+            
+            // 位深度 (32位 RGBA)
+            ico_data.extend_from_slice(&[32, 0]);
+            
+            // BMP数据大小
+            ico_data.extend_from_slice(&bmp_size.to_le_bytes());
+            
+            // BMP数据偏移量 (从文件开始算，6+16=22字节)
+            ico_data.extend_from_slice(&[22, 0, 0, 0]);
+            
+            // 4. 添加BMP图像数据
+            ico_data.extend_from_slice(&bmp_data);
+            
+            // 5. 写入ICO文件
+            fs::write(path, ico_data).map_err(|e| {
+                image::ImageError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("写入ICO文件失败: {}", e)
+                ))
+            })?;
+            
+            Ok(())
+        },
+        OutputFormat::SVG => {
+            // 现在我们处理SVG转换，首先保存为PNG
+            let png_path = path.with_extension("png");
+            img.save_with_format(&png_path, ImageFormat::Png)?;
+            
+            // 创建一个标准SVG文件，内嵌PNG数据
+            let (width, height) = img.dimensions();
+            
+            // 读取PNG文件并进行base64编码
+            let png_data = fs::read(&png_path).map_err(|e| {
+                image::ImageError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("无法读取PNG文件: {}", e)
+                ))
+            })?;
+            
+            let base64_png = general_purpose::STANDARD.encode(&png_data);
+            
+            // 创建更标准的SVG文件，嵌入PNG数据
+            let svg_content = format!(
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" 
+     xmlns="http://www.w3.org/2000/svg" 
+     xmlns:xlink="http://www.w3.org/1999/xlink">
+  <title>转换图片</title>
+  <desc>使用工具转换的栅格图像</desc>
+  <image width="{width}" height="{height}" x="0" y="0"
+         xlink:href="data:image/png;base64,{base64_png}"/>
+</svg>"#
+            );
+            
+            // 写入SVG文件
+            fs::write(path, &svg_content).map_err(|e| {
+                image::ImageError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("无法写入SVG文件: {}", e)
+                ))
+            })?;
+            
+            // 清理临时文件
+            let _ = fs::remove_file(&png_path);
+            
             Ok(())
         },
         OutputFormat::WEBP => {
@@ -233,6 +390,49 @@ fn save_image(
         },
         _ => img.save_with_format(path, format.to_image_format()),
     }
+}
+
+// 创建未压缩的BMP数据
+fn create_bmp_data(img: &image::RgbaImage) -> Result<Vec<u8>, image::ImageError> {
+    let width = img.width();
+    let height = img.height();
+    
+    // BMP文件中图像数据是从下到上存储的
+    // ICO文件中的BMP数据不需要完整的BMP文件头，只需要BITMAPINFOHEADER和像素数据
+    let mut bmp_data = Vec::new();
+    
+    // BITMAPINFOHEADER (40字节)
+    let header_size = 40u32;
+    bmp_data.extend_from_slice(&header_size.to_le_bytes());  // 头部大小
+    bmp_data.extend_from_slice(&width.to_le_bytes());        // 宽度
+    bmp_data.extend_from_slice(&(height * 2).to_le_bytes()); // 高度 (在ICO中是两倍高度)
+    bmp_data.extend_from_slice(&[1, 0]);                    // 平面数
+    bmp_data.extend_from_slice(&[32, 0]);                   // 位深度 (32位)
+    bmp_data.extend_from_slice(&[0, 0, 0, 0]);              // 不压缩
+    
+    // 图像数据大小 (width * height * 4字节)
+    let data_size = (width * height * 4) as u32;
+    bmp_data.extend_from_slice(&data_size.to_le_bytes());
+    
+    // 分辨率 (不重要，使用默认值)
+    bmp_data.extend_from_slice(&[0, 0, 0, 0]);              // X分辨率
+    bmp_data.extend_from_slice(&[0, 0, 0, 0]);              // Y分辨率
+    bmp_data.extend_from_slice(&[0, 0, 0, 0]);              // 调色板颜色数 (不使用)
+    bmp_data.extend_from_slice(&[0, 0, 0, 0]);              // 重要颜色数 (不使用)
+    
+    // 像素数据 (从下到上，从左到右)
+    for y in (0..height).rev() {
+        for x in 0..width {
+            let pixel = img.get_pixel(x, y);
+            // BGR顺序（BMP使用BGR，与RGB相反）
+            bmp_data.push(pixel[2]);  // B
+            bmp_data.push(pixel[1]);  // G
+            bmp_data.push(pixel[0]);  // R
+            bmp_data.push(pixel[3]);  // A
+        }
+    }
+    
+    Ok(bmp_data)
 }
 
 #[tauri::command]
@@ -244,6 +444,7 @@ pub fn get_supported_image_formats() -> Vec<String> {
         "WEBP".to_string(),
         "BMP".to_string(),
         "ICO".to_string(),
+        "SVG".to_string(),
     ]
 }
 
@@ -323,6 +524,7 @@ pub fn get_image_base64(file_path: &str) -> Result<String, String> {
                 Some("webp") => "image/webp",
                 Some("bmp") => "image/bmp",
                 Some("ico") => "image/x-icon",
+                Some("svg") => "image/svg+xml",
                 _ => "image/jpeg", // 默认格式
             };
             
@@ -338,6 +540,7 @@ pub fn get_image_base64(file_path: &str) -> Result<String, String> {
                 "image/webp" => img.write_to(&mut cursor, ImageOutputFormat::WebP),
                 "image/bmp" => img.write_to(&mut cursor, ImageOutputFormat::Bmp),
                 "image/x-icon" => img.write_to(&mut cursor, ImageOutputFormat::Ico),
+                "image/svg+xml" => img.write_to(&mut cursor, ImageOutputFormat::Png),
                 _ => img.write_to(&mut cursor, ImageOutputFormat::Jpeg(90)),
             };
             
