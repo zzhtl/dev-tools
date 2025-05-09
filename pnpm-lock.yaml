@@ -20,6 +20,9 @@ importers:
       '@tauri-apps/plugin-opener':
         specifier: ^2
         version: 2.2.5
+      '@tauri-apps/plugin-upload':
+        specifier: ^2.2.0
+        version: 2.2.1
       cron-parser:
         specifier: ^5.0.3
         version: 5.0.3
@@ -447,6 +450,9 @@ packages:
 
   '@tauri-apps/plugin-opener@2.2.5':
     resolution: {integrity: sha512-hHsJ9RPWpZvZEPVFaL+d25gABMUMOf/A6ESXnvf/ii9guTukj58WXsAE/SOysXRIhej7kseRCxnOnIMpSCdUsQ==}
+
+  '@tauri-apps/plugin-upload@2.2.1':
+    resolution: {integrity: sha512-2EyVhJYLAp2mJH0UzO3QGU0vPk/YWvAfdI2wXbczyzEZY/AZVa9wConyB1TV/NGhyJRim4LwWgkmnEvcKLkECw==}
 
   '@types/cookie@0.6.0':
     resolution: {integrity: sha512-4Kh9a6B2bQciAhf7FSuMRRkUWecJgJu9nPnx3yzpsfXX/c50REIqpHY4C82bXP90qrLtXtkDxTZosYO3UpOwlA==}
@@ -1057,6 +1063,10 @@ snapshots:
       '@tauri-apps/api': 2.2.0
 
   '@tauri-apps/plugin-opener@2.2.5':
+    dependencies:
+      '@tauri-apps/api': 2.2.0
+
+  '@tauri-apps/plugin-upload@2.2.1':
     dependencies:
       '@tauri-apps/api': 2.2.0
 

@@ -10,6 +10,7 @@
   import RegexTool from "./regex_tool/regex_tool.svelte";
   import HtmlTool from "./html_tool/html_tool.svelte";
   import ColorTool from "./color_tool/color_tool.svelte";
+  import ImageTool from "./image_tool/image_tool.svelte";
   let activeTab = $state("jsonTool");
   
   const tools = [
@@ -23,7 +24,8 @@
     { id: "dnsTool", name: "DNS解析", emoji: "🔍" },
     { id: "regexTool", name: "正则表达式", emoji: "🔠" },
     { id: "htmlTool", name: "HTML工具", emoji: "🌐" },
-    { id: "colorTool", name: "颜色选择器", emoji: "🎨" }
+    { id: "colorTool", name: "颜色选择器", emoji: "🎨" },
+    { id: "imageTool", name: "图片格式转换", emoji: "🖼️" }
   ];
 </script>
 
@@ -64,6 +66,8 @@
       <HtmlTool />
     {:else if activeTab === "colorTool"}
       <ColorTool />
+    {:else if activeTab === "imageTool"}
+      <ImageTool />
     {/if}
   </div>
 </main>
