@@ -9,6 +9,7 @@
     file_path?: string;
     file_name?: string;
     base64_data?: string;
+    file_size?: number;
   }
   
   interface ImageInfo {
@@ -37,6 +38,7 @@
   let errorMessage = $state<string | null>(null);
   let successMessage = $state<string | null>(null);
   let converting = $state<boolean>(false);
+  let loading = $state<boolean>(false);
   
   // 图片质量设置 (1-100)
   let quality = $state<number>(90);
@@ -51,9 +53,22 @@
   let icoSize = $state<number>(32); // 默认32x32
   const iconSizes = [16, 32, 48, 64, 128, 256];
   
+  // 文件大小格式化函数
+  function formatFileSize(bytes: number): string {
+    if (bytes < 1024 * 1024) {
+      return (bytes / 1024).toFixed(2) + " KB";
+    } else {
+      return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+    }
+  }
+  
   // 选择图片文件
   async function selectImage() {
     try {
+      loading = true;
+      errorMessage = null;
+      successMessage = null;
+      
       // 打开文件选择对话框
       const selected = await open({
         multiple: false,
@@ -64,53 +79,86 @@
       });
       
       if (selected === null) {
+        loading = false;
         return; // 用户取消了选择
       }
       
       // 处理选择的文件
-      selectedFile = selected as string;
-      const pathParts = selectedFile.split(/[/\\]/);
+      const filePath = selected as string;
+      selectedFile = filePath;
+      const pathParts = filePath.split(/[/\\]/);
       selectedFileName = pathParts[pathParts.length - 1];
       
+      // 获取文件大小 - 检查是否是大文件
       try {
-        // 为原图生成base64预览
-        const base64Data = await invoke<string>("get_image_base64", { 
-          filePath: selectedFile 
+        const fileMetadata = await invoke<{ size: number }>("get_file_metadata", { 
+          filePath: filePath 
         });
-        previewSrc = base64Data;
+        
+        const fileSize = fileMetadata.size;
+        const isLargeFile = fileSize > 5 * 1024 * 1024; // 5MB以上是大文件
+        
+        if (isLargeFile) {
+          successMessage = `正在处理大图片 (${(fileSize/(1024*1024)).toFixed(1)}MB)，请稍候...`;
+        }
       } catch (err) {
-        console.error("生成图片预览失败:", err);
-        // 回退到convertFileSrc
-        previewSrc = convertFileSrc(selectedFile);
+        console.error("获取文件元数据失败:", err);
+        // 继续处理，即使获取文件大小失败
       }
       
       // 获取图片信息
       try {
-        imageInfo = await invoke<ImageInfo>("get_image_info", { 
-          filePath: selectedFile 
-        });
+        // 使用setTimeout让UI先刷新，显示加载状态，避免卡顿感
+        setTimeout(async () => {
+          try {
+            imageInfo = await invoke<ImageInfo>("get_image_info", { 
+              filePath: filePath 
+            });
+            
+            // 设置默认调整尺寸值为原图尺寸
+            if (imageInfo) {
+              resizeWidth = imageInfo.width;
+              resizeHeight = imageInfo.height;
+            }
+          } catch (err) {
+            console.error("获取图片信息失败:", err);
+            errorMessage = `获取图片信息失败: ${err}`;
+            setTimeout(() => {
+              errorMessage = null;
+            }, 3000);
+          }
+          
+          // 异步加载图片预览，避免UI阻塞
+          try {
+            const base64Data = await invoke<string>("get_image_base64", { 
+              filePath: filePath 
+            });
+            previewSrc = base64Data;
+            successMessage = null; // 清除加载提示
+          } catch (err) {
+            console.error("生成图片预览失败:", err);
+            previewSrc = convertFileSrc(filePath);
+          } finally {
+            loading = false;
+          }
+        }, 100);
         
-        // 设置默认调整尺寸值为原图尺寸
-        if (imageInfo) {
-          resizeWidth = imageInfo.width;
-          resizeHeight = imageInfo.height;
-        }
+        // 清空转换结果
+        convertedResults = [];
+        
       } catch (err) {
-        console.error("获取图片信息失败:", err);
-        errorMessage = `获取图片信息失败: ${err}`;
+        console.error("选择图片失败:", err);
+        errorMessage = `选择图片失败: ${err}`;
+        loading = false;
         setTimeout(() => {
           errorMessage = null;
         }, 3000);
       }
       
-      // 清空转换结果和错误/成功信息
-      convertedResults = [];
-      errorMessage = null;
-      successMessage = null;
-      
     } catch (err) {
       console.error("选择图片失败:", err);
       errorMessage = `选择图片失败: ${err}`;
+      loading = false;
       setTimeout(() => {
         errorMessage = null;
       }, 3000);
@@ -167,51 +215,60 @@
         };
       }
       
-      // 调用Rust函数转换图片
-      const result = await invoke<ImageConversionResult>("convert_image", {
-        sourcePath: selectedFile,
-        format: outputFormat,
-        options: options
-      });
+      // 使用延迟渲染结果，防止UI卡顿
+      // 首先显示正在处理的消息
+      successMessage = "正在处理图片，请稍候...";
       
-      if (result.success) {
-        // 如果有base64数据，直接使用它来显示预览
-        if (result.base64_data) {
-          convertedResults = [{
-            ...result,
-            // 使用base64数据来预览，这样不需要依赖文件路径
-          }];
-        } else if (result.file_path) {
-          // 否则，使用convertFileSrc处理文件路径
-          convertedResults = [{
-            ...result
-          }];
+      // 使用setTimeout延迟处理，让UI有时间更新
+      setTimeout(async () => {
+        try {
+          // 调用Rust函数转换图片
+          const result = await invoke<ImageConversionResult>("convert_image", {
+            sourcePath: selectedFile,
+            format: outputFormat,
+            options: options
+          });
+          
+          if (result.success) {
+            // 如果有base64数据，直接使用它来显示预览
+            convertedResults = [{
+              ...result,
+              // 使用base64数据来预览，这样不需要依赖文件路径
+            }];
+            
+            let message = "图片转换成功";
+            if (outputFormat === "ICO") {
+              message = "图片已转换为ICO格式，我们使用了未压缩的ICO格式确保兼容性";
+            } else if (outputFormat === "SVG") {
+              message = "图片已转换为SVG格式(非矢量格式)";
+            }
+            
+            successMessage = message;
+            setTimeout(() => {
+              successMessage = null;
+            }, 5000);
+          } else {
+            errorMessage = `转换失败: ${result.message}`;
+            setTimeout(() => {
+              errorMessage = null;
+            }, 3000);
+          }
+        } catch (err) {
+          console.error("转换图片失败:", err);
+          errorMessage = `转换图片失败: ${err}`;
+          setTimeout(() => {
+            errorMessage = null;
+          }, 3000);
+        } finally {
+          converting = false;
         }
-        
-        let message = "图片转换成功";
-        if (outputFormat === "ICO") {
-          message = "图片已转换为ICO格式，我们使用了未压缩的ICO格式确保兼容性";
-        } else if (outputFormat === "SVG") {
-          message = "图片已转换为SVG格式(非矢量格式)";
-        }
-        
-        successMessage = message;
-        setTimeout(() => {
-          successMessage = null;
-        }, 5000);
-      } else {
-        errorMessage = `转换失败: ${result.message}`;
-        setTimeout(() => {
-          errorMessage = null;
-        }, 3000);
-      }
+      }, 100); // 短暂延迟以允许UI先渲染"处理中"消息
     } catch (err) {
       console.error("转换图片失败:", err);
       errorMessage = `转换图片失败: ${err}`;
       setTimeout(() => {
         errorMessage = null;
       }, 3000);
-    } finally {
       converting = false;
     }
   }
@@ -264,8 +321,8 @@
   <h2 class="text-2xl font-bold mb-4">图片转换工具</h2>
   
   <div class="mb-4">
-    <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mr-2" onclick={selectImage}>
-      选择图片
+    <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mr-2" onclick={selectImage} disabled={loading}>
+      {loading ? '加载中...' : '选择图片'}
     </button>
     
     {#if selectedFile && selectedFileName}
@@ -278,16 +335,28 @@
       <div class="w-full md:w-1/2 pr-2 mb-4">
         <div class="border rounded p-2">
           <h3 class="font-bold mb-2">原图预览</h3>
-          {#if previewSrc}
-            <img src={previewSrc} alt="原图预览" class="max-w-full h-auto mb-2 border" style="max-height: 300px;"/>
-          {/if}
+          <div class="border mb-2 p-2 bg-gray-50 flex justify-center" style="max-height: 300px; overflow: auto;">
+            {#if loading}
+              <div class="flex justify-center items-center h-64 w-full">
+                <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+              </div>
+            {:else if previewSrc}
+              <img src={previewSrc} alt="原图预览" class="max-w-full h-auto" style="max-height: 280px;"/>
+            {:else}
+              <div class="flex justify-center items-center h-64 w-full text-gray-400">
+                暂无预览
+              </div>
+            {/if}
+          </div>
           
           {#if imageInfo}
             <div class="text-sm">
-              <p>宽度: {imageInfo.width}px</p>
-              <p>高度: {imageInfo.height}px</p>
-              <p>颜色类型: {imageInfo.color_type}</p>
-              <p>文件大小: {(imageInfo.file_size / 1024).toFixed(2)} KB</p>
+              <div class="grid grid-cols-2 gap-2">
+                <p>宽度: {imageInfo.width}px</p>
+                <p>高度: {imageInfo.height}px</p>
+                <p>颜色类型: {imageInfo.color_type}</p>
+                <p>文件大小: {formatFileSize(imageInfo.file_size)}</p>
+              </div>
             </div>
           {/if}
         </div>
@@ -449,27 +518,34 @@
       {#each convertedResults as result}
         {#if result.success && (result.file_path || result.base64_data)}
           <div class="mb-2">
-            {#if result.base64_data}
-              {#if result.base64_data.startsWith('data:image/svg+xml')}
-                <!-- SVG特殊处理，确保正确渲染 -->
-                <div class="border mb-2 p-2 bg-gray-50" style="max-height: 300px; overflow: auto;">
+            <div class="border mb-2 p-2 bg-gray-50 flex justify-center" style="max-height: 300px; overflow: auto;">
+              {#if result.base64_data}
+                {#if result.base64_data.startsWith('data:image/svg+xml')}
+                  <!-- SVG特殊处理，确保正确渲染 -->
                   <img src={result.base64_data} alt="转换后SVG图片" class="max-w-full h-auto" style="max-height: 280px;"/>
                   <p class="text-xs text-blue-500 mt-2">SVG预览 - 此预览显示的是嵌入PNG数据的SVG文件</p>
-                </div>
-              {:else}
-                <!-- 其他图片格式正常显示 -->
-                <img src={result.base64_data} alt="转换后图片" class="max-w-full h-auto mb-2 border" style="max-height: 300px;"/>
+                {:else}
+                  <!-- 其他图片格式正常显示 -->
+                  <img src={result.base64_data} alt="转换后图片" class="max-w-full h-auto" style="max-height: 280px;"/>
+                {/if}
+              {:else if result.file_path}
+                <img src={convertFileSrc(result.file_path)} alt="转换后图片" class="max-w-full h-auto" style="max-height: 280px;"/>
               {/if}
-            {:else if result.file_path}
-              <img src={convertFileSrc(result.file_path)} alt="转换后图片" class="max-w-full h-auto mb-2 border" style="max-height: 300px;"/>
-            {/if}
-            <p>文件名: {result.file_name}</p>
-            <button 
-              class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded text-sm"
-              onclick={() => saveImage(result.file_path!, result.file_name!)}
-            >
-              保存
-            </button>
+            </div>
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center">
+              <div>
+                <p>文件名: {result.file_name}</p>
+                {#if result.file_size !== undefined}
+                  <p>文件大小: {formatFileSize(result.file_size)}</p>
+                {/if}
+              </div>
+              <button 
+                class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded text-sm mt-2 md:mt-0"
+                onclick={() => saveImage(result.file_path!, result.file_name!)}
+              >
+                保存
+              </button>
+            </div>
           </div>
         {/if}
       {/each}

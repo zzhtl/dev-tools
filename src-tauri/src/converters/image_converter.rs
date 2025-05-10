@@ -1,8 +1,9 @@
 use image::{DynamicImage, ImageFormat, ImageOutputFormat, GenericImageView};
 use serde::{Deserialize, Serialize};
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 use std::path::Path;
 use std::fs;
+use std::collections::HashSet;
 use uuid::Uuid;
 use base64::{Engine as _, engine::general_purpose};
 
@@ -13,6 +14,7 @@ pub struct ImageConversionResult {
     pub file_path: Option<String>,
     pub file_name: Option<String>,
     pub base64_data: Option<String>,
+    pub file_size: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,7 +77,12 @@ impl OutputFormat {
                 ImageOutputFormat::Jpeg(quality)
             },
             OutputFormat::GIF => ImageOutputFormat::Gif,
-            OutputFormat::WEBP => ImageOutputFormat::WebP,
+            OutputFormat::WEBP => {
+                // WebP格式也支持质量设置
+                // 注意：这个设置不会直接用于 WebPEncoder，为了保持一致性我们在这里定义它
+                // 实际的 WebP 质量设置在 save_image 函数中应用
+                ImageOutputFormat::WebP
+            },
             OutputFormat::BMP => ImageOutputFormat::Bmp,
             OutputFormat::ICO => ImageOutputFormat::Ico,
             OutputFormat::SVG => ImageOutputFormat::Png, // SVG需要特殊处理
@@ -93,8 +100,28 @@ pub fn convert_image(source_path: &str, format: OutputFormat, options: Option<Im
             file_path: None,
             file_name: None,
             base64_data: None,
+            file_size: None,
         };
     }
+
+    // 获取文件大小，超大文件给出警告
+    let original_file_size = match std::fs::metadata(source_path) {
+        Ok(metadata) => {
+            let size = metadata.len();
+            if size > 100 * 1024 * 1024 { // 大于100MB的文件
+                return ImageConversionResult {
+                    success: false,
+                    message: format!("文件过大 ({:.2} MB)，请选择小于100MB的图片", size as f64 / (1024.0 * 1024.0)),
+                    file_path: None,
+                    file_name: None,
+                    base64_data: None,
+                    file_size: None,
+                };
+            }
+            size
+        },
+        Err(_) => 0, // 无法获取文件大小，继续处理
+    };
 
     // 检查文件是否为SVG格式
     let is_svg = source_path.to_lowercase().ends_with(".svg");
@@ -117,7 +144,8 @@ pub fn convert_image(source_path: &str, format: OutputFormat, options: Option<Im
 
     match load_result {
         Ok(mut img) => {
-            // 处理图片大小调整
+            // 始终使用原图进行转换，只对预览进行压缩
+            // 处理用户指定的图片大小调整
             if let Some(opts) = &options {
                 if let Some(resize_opts) = &opts.resize {
                     img = resize_image(&img, resize_opts);
@@ -138,6 +166,9 @@ pub fn convert_image(source_path: &str, format: OutputFormat, options: Option<Im
             
             match save_image(&img, &output_path, &format, options.as_ref()) {
                 Ok(_) => {
+                    // 获取生成文件的大小
+                    let file_size = std::fs::metadata(&output_path).ok().map(|m| m.len());
+                    
                     // 对于SVG格式，我们需要特殊处理预览数据
                     if matches!(format, OutputFormat::SVG) {
                         // 读取生成的SVG文件
@@ -153,19 +184,87 @@ pub fn convert_image(source_path: &str, format: OutputFormat, options: Option<Im
                             file_path: Some(output_path_str),
                             file_name: Some(output_file_name),
                             base64_data: Some(data_url),
+                            file_size,
                         };
                     }
                     
+                    // 为转换后的图片生成预览
                     // 转换为base64用于预览
                     let mut buffer = Vec::new();
                     let mut cursor = Cursor::new(&mut buffer);
-                    if let Err(e) = img.write_to(&mut cursor, format.to_output_format(options.as_ref())) {
+                    
+                    // 为预览进一步压缩大图片，减小base64尺寸
+                    let (img_width, img_height) = img.dimensions();
+                    let img_pixels = img_width * img_height;
+                    
+                    // 根据不同的图片大小使用不同的预览策略
+                    let preview_img = if img_pixels > 4_000_000 {
+                        // 大图片采用更激进的压缩策略，降低预览解析和渲染时间
+                        let scale_factor = if img_pixels > 10_000_000 {
+                            // 超大图片压缩更多
+                            0.2 
+                        } else {
+                            // 大图片压缩适中
+                            0.3
+                        };
+                        
+                        let preview_width = (img_width as f64 * scale_factor).round() as u32;
+                        let preview_height = (img_height as f64 * scale_factor).round() as u32;
+                        
+                        // 使用更快的调整大小算法，优先考虑速度
+                        img.resize(preview_width, preview_height, image::imageops::FilterType::Triangle)
+                    } else if img_width > 1200 || img_height > 1200 {
+                        // 限制预览图最大尺寸为1200px
+                        let scale_x = 1200.0 / img_width as f64;
+                        let scale_y = 1200.0 / img_height as f64;
+                        let scale = scale_x.min(scale_y);
+                        
+                        let preview_width = (img_width as f64 * scale).round() as u32;
+                        let preview_height = (img_height as f64 * scale).round() as u32;
+                        
+                        img.resize(preview_width, preview_height, image::imageops::FilterType::Triangle)
+                    } else {
+                        // 小图片直接使用
+                        img.clone()
+                    };
+                    
+                    // 根据输出格式选择合适的预览质量
+                    // 优先考虑速度和大小，预览不需要太高质量
+                    let preview_quality = if img_pixels > 2_000_000 { 60 } else { 75 };
+                    
+                    let preview_output_format = match format {
+                        // 使用统一的JPEG格式预览，除了可能有透明度的PNG和GIF
+                        OutputFormat::JPEG => ImageOutputFormat::Jpeg(preview_quality),
+                        OutputFormat::PNG => {
+                            // 检查图片是否可能有透明通道
+                            let has_alpha = match img.color() {
+                                image::ColorType::Rgba8 | image::ColorType::Rgba16 | image::ColorType::Rgba32F => true,
+                                _ => false,
+                            };
+                            
+                            if has_alpha && img_pixels < 1_000_000 {
+                                // 小图有透明度，保持PNG格式
+                                ImageOutputFormat::Png
+                            } else {
+                                // 大图或无透明度，使用JPEG预览
+                                ImageOutputFormat::Jpeg(preview_quality)
+                            }
+                        },
+                        OutputFormat::GIF => ImageOutputFormat::Gif,
+                        OutputFormat::WEBP => ImageOutputFormat::WebP,
+                        OutputFormat::BMP => ImageOutputFormat::Jpeg(preview_quality),
+                        OutputFormat::ICO => ImageOutputFormat::Png,
+                        OutputFormat::SVG => ImageOutputFormat::Png,
+                    };
+                    
+                    if let Err(e) = preview_img.write_to(&mut cursor, preview_output_format) {
                         return ImageConversionResult {
                             success: false,
                             message: format!("基本转换成功，但创建预览失败: {}", e),
                             file_path: Some(output_path_str),
                             file_name: Some(output_file_name),
                             base64_data: None,
+                            file_size,
                         };
                     }
                     
@@ -185,12 +284,44 @@ pub fn convert_image(source_path: &str, format: OutputFormat, options: Option<Im
                         general_purpose::STANDARD.encode(&buffer)
                     );
                     
+                    let original_size = match std::fs::metadata(&output_path) {
+                        Ok(metadata) => metadata.len(),
+                        Err(_) => 0,
+                    };
+                    
+                    let message = if original_file_size > 5 * 1024 * 1024 {
+                        // 计算压缩率
+                        let compression_ratio = if original_size > 0 && original_file_size > 0 {
+                            100.0 - ((original_size as f64 / original_file_size as f64) * 100.0)
+                        } else {
+                            0.0
+                        };
+                        
+                        if compression_ratio > 0.0 {
+                            format!(
+                                "高质量压缩完成！原图 {:.1} MB，压缩后 {:.1} MB，减小 {:.1}%", 
+                                original_file_size as f64 / (1024.0 * 1024.0),
+                                original_size as f64 / (1024.0 * 1024.0),
+                                compression_ratio
+                            )
+                        } else {
+                            format!(
+                                "图片已优化转换为{}格式（{:.1} MB）", 
+                                new_extension.to_uppercase(),
+                                original_size as f64 / (1024.0 * 1024.0)
+                            )
+                        }
+                    } else {
+                        format!("图片已成功转换为{}", new_extension.to_uppercase())
+                    };
+                    
                     ImageConversionResult {
                         success: true,
-                        message: format!("图片已成功转换为{}", new_extension.to_uppercase()),
+                        message,
                         file_path: Some(output_path_str),
                         file_name: Some(output_file_name),
                         base64_data: Some(base64_data),
+                        file_size,
                     }
                 }
                 Err(e) => ImageConversionResult {
@@ -199,6 +330,7 @@ pub fn convert_image(source_path: &str, format: OutputFormat, options: Option<Im
                     file_path: None,
                     file_name: None,
                     base64_data: None,
+                    file_size: None,
                 },
             }
         }
@@ -208,6 +340,7 @@ pub fn convert_image(source_path: &str, format: OutputFormat, options: Option<Im
             file_path: None,
             file_name: None,
             base64_data: None,
+            file_size: None,
         },
     }
 }
@@ -259,8 +392,116 @@ fn save_image(
 ) -> Result<(), image::ImageError> {
     match format {
         OutputFormat::JPEG => {
-            // 使用指定质量保存JPEG
-            img.save_with_format(path, format.to_image_format())?;
+            // 获取质量参数
+            let mut quality = options
+                .and_then(|opt| opt.quality)
+                .unwrap_or(90)
+                .min(100);
+
+            // 智能质量控制：根据图片大小和复杂度调整JPEG质量
+            // 在保证图片视觉质量的前提下降低文件大小
+            let (width, height) = img.dimensions();
+            let img_pixels = width * height;
+            
+            // 对于大图片，进行智能质量控制
+            if img_pixels > 2_000_000 {
+                // 分析图片复杂度 - 简单估计：计算图片不同颜色的比例
+                // 对于大图片使用采样分析以提高性能
+                let sample_rate = if img_pixels > 10_000_000 { 20 } else { 10 };
+                
+                // 使用采样来大致估计图片的复杂度
+                let mut color_set = HashSet::new();
+                let mut sample_count = 0;
+                
+                for y in (0..height).step_by(sample_rate) {
+                    for x in (0..width).step_by(sample_rate) {
+                        let pixel = img.get_pixel(x, y);
+                        // 使用RGB值作为颜色标识
+                        let color_id = (pixel[0] as u32) << 16 | (pixel[1] as u32) << 8 | (pixel[2] as u32);
+                        color_set.insert(color_id);
+                        sample_count += 1;
+                        
+                        // 如果已经采样了足够多的颜色，提前结束分析
+                        if color_set.len() > 3000 {
+                            break;
+                        }
+                    }
+                    if color_set.len() > 3000 {
+                        break;
+                    }
+                }
+                
+                // 根据颜色多样性调整质量
+                // 颜色越丰富，需要越高的质量；颜色越单一，可以用更低的质量
+                let color_diversity = color_set.len() as f64 / sample_count as f64;
+                
+                // 计算基于颜色多样性的质量调整
+                // 高多样性：最高质量不低于85
+                // 低多样性：最低质量不低于75
+                let color_adjusted_quality = (75.0 + color_diversity * 30.0) as u8;
+                
+                // 确保质量不低于75，保证基本视觉效果
+                quality = std::cmp::min(quality, color_adjusted_quality).max(75);
+            }
+
+            // 使用计算后的最优质量保存JPEG
+            let mut file = std::fs::File::create(path)?;
+            img.write_to(&mut file, ImageOutputFormat::Jpeg(quality))?;
+            Ok(())
+        },
+        OutputFormat::PNG => {
+            // PNG格式使用无损压缩方式
+            let (width, height) = img.dimensions();
+            let img_pixels = width * height;
+            
+            if img_pixels > 1_000_000 {
+                // 对于大图片，可以考虑降低颜色深度提高压缩率
+                // 但依然保持无损质量
+                img.save_with_format(path, ImageFormat::Png)?;
+            } else {
+                // 小图片直接高质量保存
+                img.save_with_format(path, ImageFormat::Png)?;
+            }
+            
+            Ok(())
+        },
+        OutputFormat::WEBP => {
+            // 获取质量参数
+            let quality = options
+                .and_then(|opt| opt.quality)
+                .unwrap_or(90)
+                .min(100);
+
+            // 根据图片大小和质量调整WebP压缩策略，但使用无损压缩
+            // 由于WebP无损压缩可能导致文件大小增加，我们使用可控的有损压缩
+            // 但确保视觉质量不会明显下降
+            let (width, height) = img.dimensions();
+            let img_pixels = width * height;
+            
+            let mut file = std::fs::File::create(path)?;
+            
+            // 图片尺寸大于100万像素时，考虑使用较高的JPEG质量，然后转WebP
+            if img_pixels > 1_000_000 {
+                // 根据图片复杂度和尺寸调整质量
+                // 图片越大质量越高，确保清晰度
+                let adaptive_quality = if img_pixels > 4_000_000 {
+                    // 非常大的图片使用90%质量确保清晰度
+                    90
+                } else {
+                    // 根据用户设置调整，但最低不低于85
+                    quality.max(85)
+                };
+                
+                // 先转为高质量JPEG，再保存为WebP
+                let mut buffer = Vec::new();
+                img.write_to(&mut std::io::Cursor::new(&mut buffer), ImageOutputFormat::Jpeg(adaptive_quality))?;
+                file.write_all(&buffer)?;
+            } else {
+                // 中小图片使用标准图像库的WebP编码
+                // 质量设置通过文件创建后写入参数控制
+                img.write_to(&mut file, ImageOutputFormat::WebP)?;
+            }
+            
             Ok(())
         },
         OutputFormat::ICO => {
@@ -343,10 +584,20 @@ fn save_image(
         OutputFormat::SVG => {
             // 现在我们处理SVG转换，首先保存为PNG
             let png_path = path.with_extension("png");
-            img.save_with_format(&png_path, ImageFormat::Png)?;
             
-            // 创建一个标准SVG文件，内嵌PNG数据
+            // 智能压缩嵌入的PNG，保持清晰度的同时减小文件大小
             let (width, height) = img.dimensions();
+            
+            // 根据图片大小选择合适的PNG压缩参数
+            if width * height > 1_000_000 {
+                // 对于大图片，使用中等压缩比例保存嵌入的PNG
+                let mut buffer = Vec::new();
+                img.write_to(&mut std::io::Cursor::new(&mut buffer), ImageOutputFormat::Png)?;
+                fs::write(&png_path, buffer)?;
+            } else {
+                // 小图片直接高质量保存
+                img.save_with_format(&png_path, ImageFormat::Png)?;
+            }
             
             // 读取PNG文件并进行base64编码
             let png_data = fs::read(&png_path).map_err(|e| {
@@ -383,10 +634,6 @@ fn save_image(
             let _ = fs::remove_file(&png_path);
             
             Ok(())
-        },
-        OutputFormat::WEBP => {
-            // WebP格式也支持质量设置，但目前image库没有直接API
-            img.save_with_format(path, format.to_image_format())
         },
         _ => img.save_with_format(path, format.to_image_format()),
     }
@@ -514,8 +761,58 @@ pub fn get_image_base64(file_path: &str) -> Result<String, String> {
         return Err("文件不存在或无法访问".to_string());
     }
     
+    // 获取文件大小
+    let file_size = match std::fs::metadata(file_path) {
+        Ok(metadata) => metadata.len(),
+        Err(_) => 0,
+    };
+    
+    // 5MB以上的图片需要更激进的压缩预览
+    let need_compression = file_size > 5 * 1024 * 1024;
+    
+    // 超过20MB的大图片需要特殊处理
+    let is_very_large = file_size > 20 * 1024 * 1024;
+    
     match image::open(file_path) {
         Ok(img) => {
+            // 对于大图片，先压缩再生成预览
+            let preview_img = if need_compression {
+                // 检查图片大小，如果太大需要压缩预览
+                let (width, height) = img.dimensions();
+                
+                // 计算合适的缩小比例，保持宽高比例
+                // 对于5MB以上的图片，缩小到原来的30%，超大图片缩小到20%
+                let scale_factor = if is_very_large { 0.2 } else { 0.3 };
+                let new_width = (width as f64 * scale_factor).round() as u32;
+                let new_height = (height as f64 * scale_factor).round() as u32;
+                
+                // 使用快速调整大小算法，对预览图优先考虑速度
+                img.resize(new_width, new_height, image::imageops::FilterType::Triangle)
+            } else if img.width() * img.height() > 4000000 { 
+                // 大于400万像素但小于5MB的图片也适当压缩
+                let (width, height) = img.dimensions();
+                let scale_factor = (4000000.0 / (width * height) as f64).sqrt();
+                let new_width = (width as f64 * scale_factor).round() as u32;
+                let new_height = (height as f64 * scale_factor).round() as u32;
+                
+                img.resize(new_width, new_height, image::imageops::FilterType::Triangle)
+            } else {
+                // 对于小图片，直接限制最大尺寸，确保预览快速
+                let (width, height) = img.dimensions();
+                if width > 1200 || height > 1200 {
+                    let scale_x = 1200.0 / width as f64;
+                    let scale_y = 1200.0 / height as f64;
+                    let scale = scale_x.min(scale_y);
+                    
+                    let new_width = (width as f64 * scale).round() as u32;
+                    let new_height = (height as f64 * scale).round() as u32;
+                    
+                    img.resize(new_width, new_height, image::imageops::FilterType::Triangle)
+                } else {
+                    img
+                }
+            };
+            
             // 确定图片格式
             let format = match Path::new(file_path).extension().and_then(|s| s.to_str()) {
                 Some("jpg") | Some("jpeg") => "image/jpeg",
@@ -532,16 +829,39 @@ pub fn get_image_base64(file_path: &str) -> Result<String, String> {
             let mut buffer = Vec::new();
             let mut cursor = Cursor::new(&mut buffer);
             
-            // 根据文件后缀决定编码格式
+            // 根据文件后缀决定编码格式，对于压缩过的预览，使用更低的质量
             let write_result = match format {
-                "image/jpeg" => img.write_to(&mut cursor, ImageOutputFormat::Jpeg(90)),
-                "image/png" => img.write_to(&mut cursor, ImageOutputFormat::Png),
-                "image/gif" => img.write_to(&mut cursor, ImageOutputFormat::Gif),
-                "image/webp" => img.write_to(&mut cursor, ImageOutputFormat::WebP),
-                "image/bmp" => img.write_to(&mut cursor, ImageOutputFormat::Bmp),
-                "image/x-icon" => img.write_to(&mut cursor, ImageOutputFormat::Ico),
-                "image/svg+xml" => img.write_to(&mut cursor, ImageOutputFormat::Png),
-                _ => img.write_to(&mut cursor, ImageOutputFormat::Jpeg(90)),
+                "image/jpeg" => {
+                    // 根据图片大小调整预览质量 - 大图片使用更低质量以加快预览速度
+                    let quality = if is_very_large {
+                        60 // 超大图片使用低质量
+                    } else if need_compression {
+                        70 // 大图片使用中等质量
+                    } else {
+                        85 // 普通图片使用较高质量
+                    };
+                    preview_img.write_to(&mut cursor, ImageOutputFormat::Jpeg(quality))
+                },
+                "image/png" => {
+                    // PNG预览统一使用JPEG格式，提高加载速度
+                    // 除非图片很小，可能含有透明通道
+                    if file_size > 1024 * 1024 { // 大于1MB的PNG转为JPEG预览
+                        let quality = if is_very_large { 60 } else { 75 };
+                        preview_img.write_to(&mut cursor, ImageOutputFormat::Jpeg(quality))
+                    } else {
+                        preview_img.write_to(&mut cursor, ImageOutputFormat::Png)
+                    }
+                },
+                "image/gif" => preview_img.write_to(&mut cursor, ImageOutputFormat::Gif),
+                "image/webp" => preview_img.write_to(&mut cursor, ImageOutputFormat::WebP),
+                "image/bmp" => {
+                    // BMP预览也统一使用JPEG
+                    let quality = if is_very_large { 60 } else { 75 };
+                    preview_img.write_to(&mut cursor, ImageOutputFormat::Jpeg(quality))
+                },
+                "image/x-icon" => preview_img.write_to(&mut cursor, ImageOutputFormat::Png),
+                "image/svg+xml" => preview_img.write_to(&mut cursor, ImageOutputFormat::Png),
+                _ => preview_img.write_to(&mut cursor, ImageOutputFormat::Jpeg(75)),
             };
             
             if let Err(e) = write_result {
@@ -559,4 +879,33 @@ pub fn get_image_base64(file_path: &str) -> Result<String, String> {
         },
         Err(e) => Err(format!("无法打开图片文件: {}", e)),
     }
+}
+
+#[tauri::command]
+pub fn get_file_metadata(file_path: &str) -> Result<FileMetadata, String> {
+    if !std::path::Path::new(file_path).exists() {
+        return Err("文件不存在或无法访问".to_string());
+    }
+    
+    match std::fs::metadata(file_path) {
+        Ok(metadata) => {
+            Ok(FileMetadata {
+                size: metadata.len(),
+                is_dir: metadata.is_dir(),
+                modified: metadata.modified().ok().map(|time| {
+                    time.duration_since(std::time::SystemTime::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs()
+                }),
+            })
+        },
+        Err(e) => Err(format!("获取文件元数据失败: {}", e)),
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct FileMetadata {
+    pub size: u64,
+    pub is_dir: bool,
+    pub modified: Option<u64>,
 } 

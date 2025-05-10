@@ -20,7 +20,8 @@ pub fn run() {
             converters::image_converter::get_supported_image_formats,
             converters::image_converter::get_image_info,
             converters::image_converter::copy_file,
-            converters::image_converter::get_image_base64
+            converters::image_converter::get_image_base64,
+            converters::image_converter::get_file_metadata
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
