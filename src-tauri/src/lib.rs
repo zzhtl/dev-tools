@@ -1,9 +1,4 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 mod converters;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -12,10 +7,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_upload::init())
-        .invoke_handler(tauri::generate_handler![greet])
-        .invoke_handler(tauri::generate_handler![converters::json_converter::json_to_go_struct])
-        .invoke_handler(tauri::generate_handler![converters::dns_resolver::resolve_dns])
+        // 注意：所有命令必须在同一个 generate_handler! 宏中注册
+        // 多次调用 invoke_handler 会覆盖前面的，只有最后一个生效
         .invoke_handler(tauri::generate_handler![
+            // JSON 转换
+            converters::json_converter::json_to_go_struct,
+            // DNS 解析
+            converters::dns_resolver::resolve_dns,
+            // 图片转换
             converters::image_converter::convert_image,
             converters::image_converter::get_supported_image_formats,
             converters::image_converter::get_image_info,

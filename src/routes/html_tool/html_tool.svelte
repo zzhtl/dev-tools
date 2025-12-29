@@ -24,11 +24,11 @@
       let formatted = "";
       
       // 格式化处理（简单实现）
-      const formatNode = (node, level) => {
+      const formatNode = (node: Node, level: number): void => {
         const indent = "  ".repeat(level);
         
         if (node.nodeType === Node.TEXT_NODE) {
-          const text = node.textContent.trim();
+          const text = node.textContent?.trim() || "";
           if (text) {
             formatted += `${indent}${text}\n`;
           }
@@ -36,11 +36,12 @@
         }
         
         if (node.nodeType === Node.ELEMENT_NODE) {
-          formatted += `${indent}<${node.tagName.toLowerCase()}`;
+          const element = node as Element;
+          formatted += `${indent}<${element.tagName.toLowerCase()}`;
           
           // 添加属性
-          for (let i = 0; i < node.attributes.length; i++) {
-            const attr = node.attributes[i];
+          for (let i = 0; i < element.attributes.length; i++) {
+            const attr = element.attributes[i];
             formatted += ` ${attr.name}="${attr.value}"`;
           }
           
@@ -54,7 +55,7 @@
               formatNode(node.childNodes[i], level + 1);
             }
             
-            formatted += `${indent}</${node.tagName.toLowerCase()}>\n`;
+            formatted += `${indent}</${element.tagName.toLowerCase()}>\n`;
           }
         }
       };
@@ -67,7 +68,7 @@
       }
       
       htmlOutput = formatted || "格式化后的HTML将显示在这里";
-    } catch (error) {
+    } catch (error: any) {
       htmlOutput = `错误: ${error.message}`;
     }
   }
@@ -83,7 +84,7 @@
         .replace(/^\s+|\s+$/g, "");        // 移除首尾空格
         
       htmlOutput = minified || "压缩后的HTML将显示在这里";
-    } catch (error) {
+    } catch (error: any) {
       htmlOutput = `错误: ${error.message}`;
     }
   }

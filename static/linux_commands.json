@@ -1,42 +1,997 @@
 {
   "categories": [
     {
+      "name": "CPU监控",
+      "icon": "🔧",
+      "description": "查看CPU使用率、负载、进程占用等",
+      "commands": [
+        {
+          "command": "top",
+          "description": "实时监控系统进程和CPU使用情况",
+          "keywords": ["cpu", "进程", "监控", "使用率", "负载"],
+          "examples": ["top", "top -u username", "top -p pid1,pid2"],
+          "tips": "按 1 显示每个CPU核心，按 q 退出"
+        },
+        {
+          "command": "htop",
+          "description": "增强版进程监控工具，支持鼠标操作",
+          "keywords": ["cpu", "进程", "监控", "增强"],
+          "examples": ["htop", "htop -u username", "htop -d 10"],
+          "tips": "需要安装: apt install htop"
+        },
+        {
+          "command": "mpstat",
+          "description": "查看每个CPU核心的详细统计信息",
+          "keywords": ["cpu", "核心", "统计", "多核"],
+          "examples": ["mpstat", "mpstat -P ALL", "mpstat 1 5"],
+          "tips": "需要安装 sysstat 包"
+        },
+        {
+          "command": "uptime",
+          "description": "查看系统运行时间和平均负载",
+          "keywords": ["负载", "运行时间", "load"],
+          "examples": ["uptime"],
+          "tips": "负载值 < CPU核心数表示系统空闲"
+        },
+        {
+          "command": "vmstat",
+          "description": "查看虚拟内存、CPU、IO等综合信息",
+          "keywords": ["cpu", "内存", "io", "统计"],
+          "examples": ["vmstat", "vmstat 1 10", "vmstat -s"],
+          "tips": "第一个参数是间隔秒数，第二个是次数"
+        },
+        {
+          "command": "sar -u",
+          "description": "查看CPU历史使用统计",
+          "keywords": ["cpu", "历史", "统计", "性能"],
+          "examples": ["sar -u 1 5", "sar -u -f /var/log/sysstat/sa01"],
+          "tips": "需要安装并启动 sysstat 服务"
+        }
+      ]
+    },
+    {
+      "name": "内存监控",
+      "icon": "💾",
+      "description": "查看内存使用、缓存、交换分区等",
+      "commands": [
+        {
+          "command": "free",
+          "description": "显示系统内存和交换分区使用情况",
+          "keywords": ["内存", "memory", "swap", "缓存"],
+          "examples": ["free -h", "free -m", "free -g"],
+          "tips": "-h 人类可读, -m MB显示, -g GB显示"
+        },
+        {
+          "command": "cat /proc/meminfo",
+          "description": "查看详细的内存信息",
+          "keywords": ["内存", "详细", "meminfo"],
+          "examples": ["cat /proc/meminfo", "cat /proc/meminfo | grep MemTotal"],
+          "tips": "显示所有内存相关的详细参数"
+        },
+        {
+          "command": "vmstat -s",
+          "description": "以详细列表形式显示内存统计",
+          "keywords": ["内存", "统计", "详细"],
+          "examples": ["vmstat -s"],
+          "tips": "显示内存事件计数器"
+        },
+        {
+          "command": "smem",
+          "description": "按进程显示内存占用（含共享内存）",
+          "keywords": ["内存", "进程", "共享内存", "pss"],
+          "examples": ["smem", "smem -rs pss", "smem -u"],
+          "tips": "需要安装: apt install smem"
+        },
+        {
+          "command": "pmap",
+          "description": "查看进程的内存映射",
+          "keywords": ["内存", "进程", "映射", "虚拟内存"],
+          "examples": ["pmap pid", "pmap -x pid"],
+          "tips": "-x 显示扩展格式"
+        }
+      ]
+    },
+    {
+      "name": "磁盘IO",
+      "icon": "💿",
+      "description": "查看磁盘读写速度、IO等待等",
+      "commands": [
+        {
+          "command": "iostat",
+          "description": "显示磁盘IO统计信息",
+          "keywords": ["io", "磁盘", "读写", "统计"],
+          "examples": ["iostat", "iostat -x 1 5", "iostat -xdm 1"],
+          "tips": "-x 显示扩展信息, -d 只显示磁盘, -m MB单位"
+        },
+        {
+          "command": "iotop",
+          "description": "实时监控进程的磁盘IO",
+          "keywords": ["io", "进程", "实时", "监控"],
+          "examples": ["iotop", "iotop -o", "iotop -P"],
+          "tips": "需要root权限: sudo iotop"
+        },
+        {
+          "command": "df",
+          "description": "查看磁盘空间使用情况",
+          "keywords": ["磁盘", "空间", "容量", "使用率"],
+          "examples": ["df -h", "df -i", "df -T"],
+          "tips": "-h 人类可读, -i 显示inode, -T 显示文件系统类型"
+        },
+        {
+          "command": "du",
+          "description": "查看目录或文件占用空间",
+          "keywords": ["磁盘", "目录", "文件", "大小"],
+          "examples": ["du -sh *", "du -h --max-depth=1", "du -ah | sort -rh | head -20"],
+          "tips": "-s 汇总, -h 人类可读"
+        },
+        {
+          "command": "lsblk",
+          "description": "列出所有块设备信息",
+          "keywords": ["磁盘", "设备", "分区", "块设备"],
+          "examples": ["lsblk", "lsblk -f", "lsblk -o NAME,SIZE,TYPE,MOUNTPOINT"],
+          "tips": "-f 显示文件系统信息"
+        },
+        {
+          "command": "fdisk -l",
+          "description": "查看磁盘分区表详细信息",
+          "keywords": ["磁盘", "分区", "详细"],
+          "examples": ["fdisk -l", "fdisk -l /dev/sda"],
+          "tips": "需要root权限"
+        },
+        {
+          "command": "hdparm -t",
+          "description": "测试磁盘读取速度",
+          "keywords": ["磁盘", "速度", "测试", "性能"],
+          "examples": ["hdparm -t /dev/sda", "hdparm -Tt /dev/sda"],
+          "tips": "需要root权限"
+        },
+        {
+          "command": "dd",
+          "description": "测试磁盘写入速度",
+          "keywords": ["磁盘", "写入", "测试", "速度"],
+          "examples": ["dd if=/dev/zero of=test bs=1G count=1 oflag=dsync", "dd if=test of=/dev/null bs=1M"],
+          "tips": "测试完后记得删除测试文件"
+        }
+      ]
+    },
+    {
+      "name": "网络监控",
+      "icon": "🌐",
+      "description": "查看网络流量、连接、端口等",
+      "commands": [
+        {
+          "command": "ifconfig",
+          "description": "查看和配置网络接口",
+          "keywords": ["网络", "ip", "网卡", "接口"],
+          "examples": ["ifconfig", "ifconfig eth0", "ifconfig -a"],
+          "tips": "新系统推荐使用 ip addr"
+        },
+        {
+          "command": "ip",
+          "description": "现代化的网络配置命令",
+          "keywords": ["网络", "ip", "路由", "配置"],
+          "examples": ["ip addr", "ip link", "ip route", "ip neigh"],
+          "tips": "ip addr 查看地址, ip route 查看路由"
+        },
+        {
+          "command": "netstat",
+          "description": "显示网络连接、路由表、接口统计",
+          "keywords": ["网络", "连接", "端口", "监听"],
+          "examples": ["netstat -tuln", "netstat -anp", "netstat -s"],
+          "tips": "-t TCP, -u UDP, -l 监听, -n 数字显示, -p 显示进程"
+        },
+        {
+          "command": "ss",
+          "description": "更快速的socket统计工具（替代netstat）",
+          "keywords": ["网络", "socket", "连接", "端口"],
+          "examples": ["ss -tuln", "ss -s", "ss -anp"],
+          "tips": "比netstat更快，参数类似"
+        },
+        {
+          "command": "lsof -i",
+          "description": "查看网络端口占用",
+          "keywords": ["端口", "占用", "进程", "监听"],
+          "examples": ["lsof -i", "lsof -i :80", "lsof -i -P -n"],
+          "tips": "-P 不解析端口名, -n 不解析主机名"
+        },
+        {
+          "command": "iftop",
+          "description": "实时监控网络带宽使用",
+          "keywords": ["网络", "带宽", "流量", "实时"],
+          "examples": ["iftop", "iftop -i eth0", "iftop -n"],
+          "tips": "需要root权限"
+        },
+        {
+          "command": "nethogs",
+          "description": "按进程显示网络流量",
+          "keywords": ["网络", "进程", "流量", "带宽"],
+          "examples": ["nethogs", "nethogs eth0"],
+          "tips": "需要安装: apt install nethogs"
+        },
+        {
+          "command": "nload",
+          "description": "实时显示网络流量图表",
+          "keywords": ["网络", "流量", "图表", "监控"],
+          "examples": ["nload", "nload eth0"],
+          "tips": "需要安装: apt install nload"
+        },
+        {
+          "command": "tcpdump",
+          "description": "抓取网络数据包",
+          "keywords": ["网络", "抓包", "数据包", "调试"],
+          "examples": ["tcpdump -i eth0", "tcpdump -w capture.pcap", "tcpdump port 80"],
+          "tips": "需要root权限"
+        },
+        {
+          "command": "ping",
+          "description": "测试网络连通性",
+          "keywords": ["网络", "连通", "测试", "延迟"],
+          "examples": ["ping google.com", "ping -c 4 192.168.1.1", "ping -i 0.5 host"],
+          "tips": "-c 指定次数, -i 指定间隔"
+        },
+        {
+          "command": "traceroute",
+          "description": "跟踪数据包路由路径",
+          "keywords": ["网络", "路由", "跟踪", "路径"],
+          "examples": ["traceroute google.com", "traceroute -n host"],
+          "tips": "-n 不解析主机名"
+        },
+        {
+          "command": "mtr",
+          "description": "结合ping和traceroute的网络诊断工具",
+          "keywords": ["网络", "诊断", "路由", "延迟"],
+          "examples": ["mtr google.com", "mtr -r host"],
+          "tips": "需要安装: apt install mtr"
+        },
+        {
+          "command": "curl",
+          "description": "命令行HTTP请求工具",
+          "keywords": ["http", "请求", "api", "下载"],
+          "examples": ["curl https://api.example.com", "curl -o file.zip url", "curl -X POST -d 'data' url"],
+          "tips": "-o 保存文件, -X 指定方法, -d 发送数据"
+        },
+        {
+          "command": "wget",
+          "description": "命令行下载工具",
+          "keywords": ["下载", "http", "文件"],
+          "examples": ["wget url", "wget -c url", "wget -r url"],
+          "tips": "-c 断点续传, -r 递归下载"
+        }
+      ]
+    },
+    {
+      "name": "系统信息",
+      "icon": "🖥️",
+      "description": "查看系统版本、硬件信息、内核等",
+      "commands": [
+        {
+          "command": "uname",
+          "description": "显示系统内核信息",
+          "keywords": ["内核", "系统", "版本"],
+          "examples": ["uname -a", "uname -r", "uname -m"],
+          "tips": "-a 全部信息, -r 内核版本, -m 架构"
+        },
+        {
+          "command": "cat /etc/os-release",
+          "description": "查看操作系统发行版信息",
+          "keywords": ["系统", "发行版", "版本", "os"],
+          "examples": ["cat /etc/os-release"],
+          "tips": "适用于大多数现代Linux发行版"
+        },
+        {
+          "command": "hostnamectl",
+          "description": "查看和设置主机名及系统信息",
+          "keywords": ["主机名", "系统", "信息"],
+          "examples": ["hostnamectl", "hostnamectl set-hostname newname"],
+          "tips": "适用于systemd系统"
+        },
+        {
+          "command": "lscpu",
+          "description": "显示CPU架构信息",
+          "keywords": ["cpu", "硬件", "架构", "核心"],
+          "examples": ["lscpu"],
+          "tips": "显示CPU型号、核心数、缓存等信息"
+        },
+        {
+          "command": "lshw",
+          "description": "列出所有硬件详细信息",
+          "keywords": ["硬件", "详细", "全部"],
+          "examples": ["lshw", "lshw -short", "lshw -C memory"],
+          "tips": "需要root权限获取完整信息"
+        },
+        {
+          "command": "dmidecode",
+          "description": "查看BIOS和硬件详细信息",
+          "keywords": ["bios", "硬件", "主板", "内存条"],
+          "examples": ["dmidecode", "dmidecode -t memory", "dmidecode -t system"],
+          "tips": "需要root权限"
+        },
+        {
+          "command": "lspci",
+          "description": "列出所有PCI设备",
+          "keywords": ["pci", "硬件", "显卡", "网卡"],
+          "examples": ["lspci", "lspci -v", "lspci | grep -i vga"],
+          "tips": "-v 显示详细信息"
+        },
+        {
+          "command": "lsusb",
+          "description": "列出所有USB设备",
+          "keywords": ["usb", "设备", "硬件"],
+          "examples": ["lsusb", "lsusb -v"],
+          "tips": "-v 显示详细信息"
+        },
+        {
+          "command": "cat /proc/cpuinfo",
+          "description": "查看CPU详细信息",
+          "keywords": ["cpu", "详细", "型号"],
+          "examples": ["cat /proc/cpuinfo", "cat /proc/cpuinfo | grep 'model name'"],
+          "tips": "显示每个CPU核心的详细参数"
+        },
+        {
+          "command": "hostname",
+          "description": "显示或设置系统主机名",
+          "keywords": ["主机名", "hostname"],
+          "examples": ["hostname", "hostname -I"],
+          "tips": "-I 显示所有IP地址"
+        },
+        {
+          "command": "dmesg",
+          "description": "查看内核环形缓冲区消息",
+          "keywords": ["内核", "日志", "启动", "硬件"],
+          "examples": ["dmesg", "dmesg | tail", "dmesg | grep -i error"],
+          "tips": "可用于查看硬件检测信息"
+        },
+        {
+          "command": "sensors",
+          "description": "查看硬件温度传感器信息",
+          "keywords": ["温度", "传感器", "cpu温度"],
+          "examples": ["sensors"],
+          "tips": "需要安装 lm-sensors 包"
+        }
+      ]
+    },
+    {
+      "name": "进程管理",
+      "icon": "⚙️",
+      "description": "查看、管理、终止进程",
+      "commands": [
+        {
+          "command": "ps",
+          "description": "显示当前进程快照",
+          "keywords": ["进程", "查看", "列表"],
+          "examples": ["ps aux", "ps -ef", "ps -u username", "ps aux --sort=-%mem | head"],
+          "tips": "aux BSD风格, -ef UNIX风格"
+        },
+        {
+          "command": "pgrep",
+          "description": "根据名称查找进程ID",
+          "keywords": ["进程", "查找", "pid"],
+          "examples": ["pgrep nginx", "pgrep -l nginx", "pgrep -u root"],
+          "tips": "-l 显示进程名, -u 按用户过滤"
+        },
+        {
+          "command": "pidof",
+          "description": "根据程序名获取PID",
+          "keywords": ["进程", "pid", "查找"],
+          "examples": ["pidof nginx", "pidof -s nginx"],
+          "tips": "-s 只返回一个PID"
+        },
+        {
+          "command": "kill",
+          "description": "发送信号给进程",
+          "keywords": ["进程", "终止", "信号", "杀死"],
+          "examples": ["kill pid", "kill -9 pid", "kill -15 pid"],
+          "tips": "-9 强制终止, -15 正常终止"
+        },
+        {
+          "command": "killall",
+          "description": "根据名称终止所有匹配进程",
+          "keywords": ["进程", "终止", "批量"],
+          "examples": ["killall nginx", "killall -9 nginx"],
+          "tips": "会终止所有同名进程"
+        },
+        {
+          "command": "pkill",
+          "description": "根据模式匹配终止进程",
+          "keywords": ["进程", "终止", "模式"],
+          "examples": ["pkill nginx", "pkill -u username", "pkill -f 'python script'"],
+          "tips": "-f 匹配完整命令行"
+        },
+        {
+          "command": "nice",
+          "description": "以指定优先级运行程序",
+          "keywords": ["进程", "优先级", "nice"],
+          "examples": ["nice -n 10 command", "nice -n -5 command"],
+          "tips": "值范围-20(最高)到19(最低)"
+        },
+        {
+          "command": "renice",
+          "description": "修改运行中进程的优先级",
+          "keywords": ["进程", "优先级", "修改"],
+          "examples": ["renice 10 -p pid", "renice -5 -p pid"],
+          "tips": "需要root权限降低nice值"
+        },
+        {
+          "command": "nohup",
+          "description": "使命令在后台运行不受终端影响",
+          "keywords": ["后台", "运行", "守护"],
+          "examples": ["nohup command &", "nohup ./script.sh > output.log 2>&1 &"],
+          "tips": "输出默认保存到 nohup.out"
+        },
+        {
+          "command": "bg/fg",
+          "description": "将任务放到后台/前台执行",
+          "keywords": ["后台", "前台", "任务"],
+          "examples": ["bg %1", "fg %1", "jobs"],
+          "tips": "Ctrl+Z 暂停当前任务"
+        }
+      ]
+    },
+    {
       "name": "文件操作",
+      "icon": "📁",
+      "description": "文件的查看、创建、删除、查找等",
       "commands": [
-        {"command": "ls", "description": "列出目录内容", "pinyin": ["lswg"], "examples": ["ls -l", "ls -a"]},
-        {"command": "cp", "description": "复制文件", "pinyin": ["fzwj"], "examples": ["cp file.txt backup/", "cp -r dir new_dir"]},
-        {"command": "mv", "description": "移动/重命名", "pinyin": ["yd","czm"], "examples": ["mv old.txt new.txt", "mv dir/ /path"]},
-        {"command": "rm", "description": "删除文件", "pinyin": ["scwj"], "examples": ["rm file.txt", "rm -rf dir/"]},
-        {"command": "mkdir", "description": "创建目录", "pinyin": ["cjml"], "examples": ["mkdir new_dir", "mkdir -p path/to/dir"]}
+        {
+          "command": "ls",
+          "description": "列出目录内容",
+          "keywords": ["目录", "列表", "文件"],
+          "examples": ["ls -l", "ls -la", "ls -lh", "ls -lt"],
+          "tips": "-l 详细, -a 全部, -h 人类可读, -t 按时间排序"
+        },
+        {
+          "command": "cd",
+          "description": "切换当前目录",
+          "keywords": ["目录", "切换", "进入"],
+          "examples": ["cd /path", "cd ..", "cd ~", "cd -"],
+          "tips": "- 返回上次目录, ~ 用户主目录"
+        },
+        {
+          "command": "pwd",
+          "description": "显示当前工作目录",
+          "keywords": ["目录", "当前", "路径"],
+          "examples": ["pwd"],
+          "tips": "显示完整绝对路径"
+        },
+        {
+          "command": "mkdir",
+          "description": "创建目录",
+          "keywords": ["目录", "创建", "文件夹"],
+          "examples": ["mkdir dir", "mkdir -p path/to/dir"],
+          "tips": "-p 递归创建父目录"
+        },
+        {
+          "command": "cp",
+          "description": "复制文件或目录",
+          "keywords": ["复制", "拷贝", "文件"],
+          "examples": ["cp file.txt backup/", "cp -r dir/ new_dir/", "cp -a src dst"],
+          "tips": "-r 递归复制目录, -a 保留属性"
+        },
+        {
+          "command": "mv",
+          "description": "移动或重命名文件",
+          "keywords": ["移动", "重命名", "文件"],
+          "examples": ["mv old.txt new.txt", "mv file.txt /path/"],
+          "tips": "同目录下相当于重命名"
+        },
+        {
+          "command": "rm",
+          "description": "删除文件或目录",
+          "keywords": ["删除", "移除", "文件"],
+          "examples": ["rm file.txt", "rm -r dir/", "rm -rf dir/"],
+          "tips": "-r 递归删除, -f 强制删除, 谨慎使用!"
+        },
+        {
+          "command": "touch",
+          "description": "创建空文件或更新时间戳",
+          "keywords": ["创建", "文件", "时间戳"],
+          "examples": ["touch file.txt", "touch -t 202401011200 file"],
+          "tips": "文件存在则更新时间戳"
+        },
+        {
+          "command": "cat",
+          "description": "查看文件内容",
+          "keywords": ["查看", "内容", "文件"],
+          "examples": ["cat file.txt", "cat file1 file2", "cat -n file.txt"],
+          "tips": "-n 显示行号"
+        },
+        {
+          "command": "head",
+          "description": "查看文件开头部分",
+          "keywords": ["查看", "开头", "文件"],
+          "examples": ["head file.txt", "head -n 20 file.txt", "head -c 100 file"],
+          "tips": "-n 指定行数, -c 指定字节数"
+        },
+        {
+          "command": "tail",
+          "description": "查看文件结尾部分",
+          "keywords": ["查看", "结尾", "文件", "日志"],
+          "examples": ["tail file.txt", "tail -n 20 file.txt", "tail -f log.txt"],
+          "tips": "-f 实时跟踪文件变化，常用于查看日志"
+        },
+        {
+          "command": "less",
+          "description": "分页查看文件内容",
+          "keywords": ["查看", "分页", "文件"],
+          "examples": ["less file.txt"],
+          "tips": "q 退出, / 搜索, n 下一个匹配"
+        },
+        {
+          "command": "find",
+          "description": "查找文件",
+          "keywords": ["查找", "搜索", "文件"],
+          "examples": ["find /path -name '*.txt'", "find . -type f -mtime -7", "find . -size +100M"],
+          "tips": "-name 按名称, -type f 文件, -mtime 按修改时间"
+        },
+        {
+          "command": "locate",
+          "description": "快速定位文件",
+          "keywords": ["查找", "定位", "文件", "快速"],
+          "examples": ["locate filename", "locate -i filename"],
+          "tips": "需要先运行 updatedb 更新数据库"
+        },
+        {
+          "command": "which",
+          "description": "查找命令的完整路径",
+          "keywords": ["查找", "命令", "路径"],
+          "examples": ["which python", "which -a python"],
+          "tips": "-a 显示所有匹配路径"
+        },
+        {
+          "command": "whereis",
+          "description": "查找命令的二进制、源码、手册位置",
+          "keywords": ["查找", "命令", "位置"],
+          "examples": ["whereis nginx"],
+          "tips": "显示程序相关的所有文件位置"
+        }
       ]
     },
     {
-      "name": "系统监控",
+      "name": "文本处理",
+      "icon": "📝",
+      "description": "文本搜索、替换、处理",
       "commands": [
-        {"command": "top", "description": "实时进程监控", "pinyin": ["ssjk"], "examples": ["top", "top -u user"]},
-        {"command": "htop", "description": "增强型监控", "pinyin": ["zqxj"], "examples": ["htop", "htop -d 10"]},
-        {"command": "ps", "description": "进程快照", "pinyin": ["jckz"], "examples": ["ps aux", "ps -ef"]},
-        {"command": "free", "description": "内存使用", "pinyin": ["ncsy"], "examples": ["free -h", "free -m"]},
-        {"command": "df", "description": "磁盘空间", "pinyin": ["cpkj"], "examples": ["df -h", "df -i"]}
+        {
+          "command": "grep",
+          "description": "在文件中搜索文本模式",
+          "keywords": ["搜索", "查找", "文本", "过滤"],
+          "examples": ["grep 'pattern' file", "grep -r 'pattern' dir/", "grep -i 'pattern' file", "grep -v 'pattern' file"],
+          "tips": "-r 递归, -i 忽略大小写, -v 反向匹配, -n 显示行号"
+        },
+        {
+          "command": "sed",
+          "description": "流编辑器，文本替换处理",
+          "keywords": ["替换", "编辑", "文本", "处理"],
+          "examples": ["sed 's/old/new/g' file", "sed -i 's/old/new/g' file", "sed -n '1,10p' file"],
+          "tips": "-i 直接修改文件, -n 配合 p 打印指定行"
+        },
+        {
+          "command": "awk",
+          "description": "强大的文本处理工具",
+          "keywords": ["文本", "处理", "列", "字段"],
+          "examples": ["awk '{print $1}' file", "awk -F: '{print $1}' /etc/passwd", "awk 'NR>1' file"],
+          "tips": "-F 指定分隔符, $1 第一列, NR 行号"
+        },
+        {
+          "command": "cut",
+          "description": "按列截取文本",
+          "keywords": ["截取", "列", "字段"],
+          "examples": ["cut -d: -f1 /etc/passwd", "cut -c1-10 file"],
+          "tips": "-d 分隔符, -f 字段, -c 字符位置"
+        },
+        {
+          "command": "sort",
+          "description": "对文本行排序",
+          "keywords": ["排序", "文本"],
+          "examples": ["sort file", "sort -r file", "sort -n file", "sort -k2 file"],
+          "tips": "-r 逆序, -n 数字排序, -k 按指定列排序"
+        },
+        {
+          "command": "uniq",
+          "description": "去除重复行",
+          "keywords": ["去重", "唯一", "重复"],
+          "examples": ["uniq file", "sort file | uniq", "uniq -c file"],
+          "tips": "通常需要先排序, -c 计数"
+        },
+        {
+          "command": "wc",
+          "description": "统计行数、单词数、字节数",
+          "keywords": ["统计", "行数", "单词"],
+          "examples": ["wc file", "wc -l file", "wc -w file"],
+          "tips": "-l 行数, -w 单词数, -c 字节数"
+        },
+        {
+          "command": "diff",
+          "description": "比较两个文件的差异",
+          "keywords": ["比较", "差异", "对比"],
+          "examples": ["diff file1 file2", "diff -u file1 file2"],
+          "tips": "-u 统一格式输出"
+        },
+        {
+          "command": "tr",
+          "description": "转换或删除字符",
+          "keywords": ["转换", "替换", "字符"],
+          "examples": ["tr 'a-z' 'A-Z' < file", "tr -d '\\n' < file", "tr -s ' ' < file"],
+          "tips": "-d 删除字符, -s 压缩重复字符"
+        },
+        {
+          "command": "xargs",
+          "description": "将标准输入转换为命令参数",
+          "keywords": ["参数", "管道", "批量"],
+          "examples": ["find . -name '*.log' | xargs rm", "cat files.txt | xargs -I {} cp {} backup/"],
+          "tips": "-I {} 使用占位符"
+        }
       ]
     },
     {
-      "name": "网络管理",
+      "name": "压缩归档",
+      "icon": "📦",
+      "description": "文件压缩、解压、打包",
       "commands": [
-        {"command": "curl", "description": "数据传输工具", "pinyin": ["sjcs"], "examples": ["curl example.com", "curl -O file.zip"]},
-        {"command": "wget", "description": "文件下载", "pinyin": ["wjxz"], "examples": ["wget url", "wget -c url"]},
-        {"command": "ssh", "description": "安全连接", "pinyin": ["aqlj"], "examples": ["ssh user@host", "ssh -p 2222 host"]},
-        {"command": "ping", "description": "网络测试", "pinyin": ["wlcs"], "examples": ["ping example.com", "ping -c 4 ip"]},
-        {"command": "netstat", "description": "网络状态", "pinyin": ["wlzt"], "examples": ["netstat -tulpn", "netstat -an"]}
+        {
+          "command": "tar",
+          "description": "打包和解包文件",
+          "keywords": ["打包", "解包", "归档"],
+          "examples": ["tar -cvf archive.tar files/", "tar -xvf archive.tar", "tar -czvf archive.tar.gz files/", "tar -xzvf archive.tar.gz"],
+          "tips": "-c 创建, -x 解压, -v 详细, -f 文件名, -z gzip"
+        },
+        {
+          "command": "gzip",
+          "description": "压缩文件为.gz格式",
+          "keywords": ["压缩", "gzip", "gz"],
+          "examples": ["gzip file", "gzip -d file.gz", "gzip -k file"],
+          "tips": "-d 解压, -k 保留原文件"
+        },
+        {
+          "command": "gunzip",
+          "description": "解压.gz文件",
+          "keywords": ["解压", "gzip", "gz"],
+          "examples": ["gunzip file.gz"],
+          "tips": "等同于 gzip -d"
+        },
+        {
+          "command": "zip",
+          "description": "压缩文件为.zip格式",
+          "keywords": ["压缩", "zip"],
+          "examples": ["zip archive.zip files", "zip -r archive.zip dir/"],
+          "tips": "-r 递归压缩目录"
+        },
+        {
+          "command": "unzip",
+          "description": "解压.zip文件",
+          "keywords": ["解压", "zip"],
+          "examples": ["unzip archive.zip", "unzip archive.zip -d /path/"],
+          "tips": "-d 指定解压目录"
+        },
+        {
+          "command": "bzip2",
+          "description": "压缩文件为.bz2格式",
+          "keywords": ["压缩", "bzip2", "bz2"],
+          "examples": ["bzip2 file", "bzip2 -d file.bz2"],
+          "tips": "压缩率比gzip高但更慢"
+        },
+        {
+          "command": "xz",
+          "description": "压缩文件为.xz格式",
+          "keywords": ["压缩", "xz", "高压缩"],
+          "examples": ["xz file", "xz -d file.xz"],
+          "tips": "压缩率最高但最慢"
+        }
       ]
     },
     {
-      "name": "权限管理",
+      "name": "用户权限",
+      "icon": "🔐",
+      "description": "用户管理、权限设置",
       "commands": [
-        {"command": "chmod", "description": "修改权限", "pinyin": ["xgqx"], "examples": ["chmod 755 file", "chmod +x script"]},
-        {"command": "chown", "description": "修改所有者", "pinyin": ["xgsyz"], "examples": ["chown user:group file", "chown -R user dir/"]},
-        {"command": "sudo", "description": "提权执行", "pinyin": ["tqzx"], "examples": ["sudo apt update", "sudo -i"]},
-        {"command": "passwd", "description": "修改密码", "pinyin": ["xgmm"], "examples": ["passwd", "passwd username"]}
+        {
+          "command": "chmod",
+          "description": "修改文件权限",
+          "keywords": ["权限", "修改", "读写执行"],
+          "examples": ["chmod 755 file", "chmod +x script.sh", "chmod -R 644 dir/"],
+          "tips": "755=rwxr-xr-x, 644=rw-r--r--"
+        },
+        {
+          "command": "chown",
+          "description": "修改文件所有者",
+          "keywords": ["所有者", "用户", "组"],
+          "examples": ["chown user file", "chown user:group file", "chown -R user:group dir/"],
+          "tips": "-R 递归修改"
+        },
+        {
+          "command": "chgrp",
+          "description": "修改文件所属组",
+          "keywords": ["组", "group"],
+          "examples": ["chgrp group file", "chgrp -R group dir/"],
+          "tips": "-R 递归修改"
+        },
+        {
+          "command": "sudo",
+          "description": "以root权限执行命令",
+          "keywords": ["root", "管理员", "提权"],
+          "examples": ["sudo command", "sudo -i", "sudo -u user command"],
+          "tips": "-i 进入root shell, -u 以指定用户执行"
+        },
+        {
+          "command": "su",
+          "description": "切换用户",
+          "keywords": ["切换", "用户"],
+          "examples": ["su - username", "su -"],
+          "tips": "- 加载用户环境变量"
+        },
+        {
+          "command": "useradd",
+          "description": "创建新用户",
+          "keywords": ["用户", "创建", "添加"],
+          "examples": ["useradd username", "useradd -m -s /bin/bash username"],
+          "tips": "-m 创建主目录, -s 指定shell"
+        },
+        {
+          "command": "userdel",
+          "description": "删除用户",
+          "keywords": ["用户", "删除"],
+          "examples": ["userdel username", "userdel -r username"],
+          "tips": "-r 同时删除主目录"
+        },
+        {
+          "command": "passwd",
+          "description": "修改用户密码",
+          "keywords": ["密码", "修改"],
+          "examples": ["passwd", "passwd username"],
+          "tips": "不带参数修改当前用户密码"
+        },
+        {
+          "command": "groupadd",
+          "description": "创建新组",
+          "keywords": ["组", "创建"],
+          "examples": ["groupadd groupname"],
+          "tips": "创建用户组"
+        },
+        {
+          "command": "usermod",
+          "description": "修改用户属性",
+          "keywords": ["用户", "修改", "组"],
+          "examples": ["usermod -aG group user", "usermod -s /bin/bash user"],
+          "tips": "-aG 添加到附加组"
+        },
+        {
+          "command": "id",
+          "description": "显示用户ID和组ID",
+          "keywords": ["用户", "id", "组"],
+          "examples": ["id", "id username"],
+          "tips": "显示uid, gid, groups"
+        },
+        {
+          "command": "whoami",
+          "description": "显示当前用户名",
+          "keywords": ["用户", "当前"],
+          "examples": ["whoami"],
+          "tips": "显示当前登录的用户名"
+        },
+        {
+          "command": "groups",
+          "description": "显示用户所属组",
+          "keywords": ["组", "用户"],
+          "examples": ["groups", "groups username"],
+          "tips": "显示用户所属的所有组"
+        }
+      ]
+    },
+    {
+      "name": "服务管理",
+      "icon": "🔄",
+      "description": "系统服务启动、停止、状态查看",
+      "commands": [
+        {
+          "command": "systemctl",
+          "description": "systemd服务管理命令",
+          "keywords": ["服务", "启动", "停止", "状态"],
+          "examples": ["systemctl status nginx", "systemctl start nginx", "systemctl stop nginx", "systemctl restart nginx", "systemctl enable nginx"],
+          "tips": "enable 开机启动, disable 禁用开机启动"
+        },
+        {
+          "command": "service",
+          "description": "传统服务管理命令",
+          "keywords": ["服务", "启动", "停止"],
+          "examples": ["service nginx status", "service nginx start", "service nginx stop"],
+          "tips": "兼容旧系统"
+        },
+        {
+          "command": "journalctl",
+          "description": "查看systemd日志",
+          "keywords": ["日志", "systemd", "查看"],
+          "examples": ["journalctl -u nginx", "journalctl -f", "journalctl --since today"],
+          "tips": "-u 指定服务, -f 实时跟踪"
+        },
+        {
+          "command": "chkconfig",
+          "description": "管理开机启动服务（CentOS/RHEL）",
+          "keywords": ["开机启动", "服务"],
+          "examples": ["chkconfig --list", "chkconfig nginx on"],
+          "tips": "适用于SysVinit系统"
+        }
+      ]
+    },
+    {
+      "name": "SSH远程",
+      "icon": "🔗",
+      "description": "SSH连接、密钥管理、远程操作",
+      "commands": [
+        {
+          "command": "ssh",
+          "description": "远程登录服务器",
+          "keywords": ["远程", "登录", "连接"],
+          "examples": ["ssh user@host", "ssh -p 2222 user@host", "ssh -i key.pem user@host"],
+          "tips": "-p 指定端口, -i 指定密钥"
+        },
+        {
+          "command": "scp",
+          "description": "通过SSH复制文件",
+          "keywords": ["复制", "远程", "文件传输"],
+          "examples": ["scp file user@host:/path/", "scp user@host:/path/file ./", "scp -r dir user@host:/path/"],
+          "tips": "-r 递归复制目录"
+        },
+        {
+          "command": "rsync",
+          "description": "高效文件同步工具",
+          "keywords": ["同步", "备份", "文件传输"],
+          "examples": ["rsync -avz src/ dst/", "rsync -avz src/ user@host:/path/", "rsync -avz --delete src/ dst/"],
+          "tips": "-a 归档模式, -v 详细, -z 压缩, --delete 删除目标多余文件"
+        },
+        {
+          "command": "ssh-keygen",
+          "description": "生成SSH密钥对",
+          "keywords": ["密钥", "生成", "ssh"],
+          "examples": ["ssh-keygen", "ssh-keygen -t ed25519", "ssh-keygen -t rsa -b 4096"],
+          "tips": "ed25519 更安全，rsa 兼容性好"
+        },
+        {
+          "command": "ssh-copy-id",
+          "description": "复制公钥到远程服务器",
+          "keywords": ["公钥", "复制", "免密登录"],
+          "examples": ["ssh-copy-id user@host", "ssh-copy-id -i ~/.ssh/id_ed25519.pub user@host"],
+          "tips": "实现免密码登录"
+        },
+        {
+          "command": "sftp",
+          "description": "交互式文件传输",
+          "keywords": ["文件传输", "交互式", "ssh"],
+          "examples": ["sftp user@host"],
+          "tips": "进入后可用 put, get 命令传输文件"
+        }
+      ]
+    },
+    {
+      "name": "日志查看",
+      "icon": "📋",
+      "description": "系统日志、应用日志查看",
+      "commands": [
+        {
+          "command": "tail -f",
+          "description": "实时查看日志更新",
+          "keywords": ["日志", "实时", "跟踪"],
+          "examples": ["tail -f /var/log/syslog", "tail -f /var/log/nginx/access.log", "tail -f -n 100 log.txt"],
+          "tips": "-f 实时跟踪, -n 指定初始行数"
+        },
+        {
+          "command": "journalctl",
+          "description": "查看systemd管理的日志",
+          "keywords": ["日志", "systemd", "系统日志"],
+          "examples": ["journalctl", "journalctl -u nginx", "journalctl -f", "journalctl --since '1 hour ago'"],
+          "tips": "-u 指定服务, -f 实时, --since/--until 时间范围"
+        },
+        {
+          "command": "cat /var/log/syslog",
+          "description": "查看系统日志（Debian/Ubuntu）",
+          "keywords": ["系统日志", "syslog"],
+          "examples": ["cat /var/log/syslog", "tail -100 /var/log/syslog"],
+          "tips": "CentOS 使用 /var/log/messages"
+        },
+        {
+          "command": "cat /var/log/messages",
+          "description": "查看系统日志（CentOS/RHEL）",
+          "keywords": ["系统日志", "messages"],
+          "examples": ["cat /var/log/messages", "tail -100 /var/log/messages"],
+          "tips": "Debian/Ubuntu 使用 /var/log/syslog"
+        },
+        {
+          "command": "last",
+          "description": "查看用户登录历史",
+          "keywords": ["登录", "历史", "用户"],
+          "examples": ["last", "last -n 20", "last username"],
+          "tips": "显示登录、登出记录"
+        },
+        {
+          "command": "lastlog",
+          "description": "查看所有用户最后登录时间",
+          "keywords": ["登录", "最后", "用户"],
+          "examples": ["lastlog"],
+          "tips": "显示每个用户的最后登录时间"
+        },
+        {
+          "command": "dmesg",
+          "description": "查看内核消息日志",
+          "keywords": ["内核", "日志", "启动"],
+          "examples": ["dmesg", "dmesg | tail", "dmesg -T"],
+          "tips": "-T 显示人类可读时间"
+        }
+      ]
+    },
+    {
+      "name": "定时任务",
+      "icon": "⏰",
+      "description": "cron定时任务管理",
+      "commands": [
+        {
+          "command": "crontab",
+          "description": "管理用户定时任务",
+          "keywords": ["定时", "cron", "计划任务"],
+          "examples": ["crontab -l", "crontab -e", "crontab -r"],
+          "tips": "-l 列出, -e 编辑, -r 删除所有"
+        },
+        {
+          "command": "at",
+          "description": "设置一次性定时任务",
+          "keywords": ["定时", "一次性", "计划"],
+          "examples": ["at 10:00", "at now + 1 hour", "atq"],
+          "tips": "atq 查看队列, atrm 删除任务"
+        },
+        {
+          "command": "watch",
+          "description": "周期性执行命令并显示结果",
+          "keywords": ["周期", "监控", "重复执行"],
+          "examples": ["watch df -h", "watch -n 5 'ps aux | head'", "watch -d ls -l"],
+          "tips": "-n 间隔秒数, -d 高亮变化"
+        }
+      ]
+    },
+    {
+      "name": "包管理",
+      "icon": "📥",
+      "description": "软件包安装、更新、删除",
+      "commands": [
+        {
+          "command": "apt",
+          "description": "Debian/Ubuntu包管理器",
+          "keywords": ["安装", "包", "软件", "apt"],
+          "examples": ["apt update", "apt upgrade", "apt install package", "apt remove package", "apt search keyword"],
+          "tips": "需要sudo权限"
+        },
+        {
+          "command": "apt-get",
+          "description": "Debian/Ubuntu传统包管理器",
+          "keywords": ["安装", "包", "软件"],
+          "examples": ["apt-get update", "apt-get install package", "apt-get remove package"],
+          "tips": "apt 是更现代的替代"
+        },
+        {
+          "command": "yum",
+          "description": "CentOS/RHEL 7包管理器",
+          "keywords": ["安装", "包", "软件", "yum"],
+          "examples": ["yum update", "yum install package", "yum remove package", "yum search keyword"],
+          "tips": "CentOS 8+ 使用 dnf"
+        },
+        {
+          "command": "dnf",
+          "description": "CentOS 8+/Fedora包管理器",
+          "keywords": ["安装", "包", "软件", "dnf"],
+          "examples": ["dnf update", "dnf install package", "dnf remove package"],
+          "tips": "yum 的替代品"
+        },
+        {
+          "command": "dpkg",
+          "description": "Debian包管理底层工具",
+          "keywords": ["deb", "包", "安装"],
+          "examples": ["dpkg -i package.deb", "dpkg -l", "dpkg -r package"],
+          "tips": "-i 安装, -l 列出, -r 删除"
+        },
+        {
+          "command": "rpm",
+          "description": "RedHat包管理底层工具",
+          "keywords": ["rpm", "包", "安装"],
+          "examples": ["rpm -ivh package.rpm", "rpm -qa", "rpm -e package"],
+          "tips": "-i 安装, -q 查询, -e 删除"
+        }
       ]
     }
   ]
