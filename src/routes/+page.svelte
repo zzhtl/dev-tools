@@ -456,6 +456,35 @@
     transition: var(--transition);
   }
 
+  /* 下拉框深色主题样式 */
+  :global(.tool-container select) {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1em;
+    padding-right: 2.5rem;
+    cursor: pointer;
+  }
+
+  :global(.tool-container select option) {
+    background: #1a1a2e;
+    color: #e4e4e7;
+    padding: 0.5rem;
+  }
+
+  :global(.tool-container select option:hover),
+  :global(.tool-container select option:checked) {
+    background: #2d2d44;
+    color: #fff;
+  }
+
+  :global(.tool-container select::-ms-expand) {
+    display: none;
+  }
+
   :global(.tool-container input:focus),
   :global(.tool-container textarea:focus),
   :global(.tool-container select:focus) {
