@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { tick, untrack } from "svelte";
+
   let jsonInput = $state("");
   let jsonOutput = $state("");
   let structOutput = $state("");
@@ -11,7 +13,8 @@
   let showStats = $state(false);
   let jsonStats = $state<JsonStats | null>(null);
   let searchQuery = $state("");
-  let searchResults = $state<SearchResult[]>([]);
+  let searchMatches = $state<SearchMatch[]>([]);
+  let activeSearchIndex = $state(-1);
   let jsonPath = $state("");
   let jsonPathResult = $state("");
   let history = $state<HistoryItem[]>([]);
@@ -21,6 +24,15 @@
   let parsedJson = $state<unknown>(null);
   let isFullscreen = $state(false);
   let splitRatio = $state(50); // 左右分割比例
+  let inputTextarea = $state<HTMLTextAreaElement | null>(null);
+  let lineNumbersEl = $state<HTMLDivElement | null>(null);
+  let highlightLayerEl = $state<HTMLDivElement | null>(null);
+  let processTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastSearchQuery = "";
+  const indentSelectId = "json-indent-size";
+  const structLanguageSelectId = "json-struct-language";
+  const jsonPathInputId = "json-path-input";
+  const searchInputId = "json-search-input";
 
   interface ErrorInfo {
     line: number;
@@ -52,10 +64,9 @@
     totalSize: number;
   }
 
-  interface SearchResult {
-    path: string;
-    key: string;
-    value: string;
+  interface SearchMatch {
+    start: number;
+    end: number;
   }
 
   const modes = [
@@ -79,62 +90,29 @@
   // 解析JSON错误 - 支持多种浏览器引擎(V8/WebKit/Firefox)
   function parseJsonError(input: string, error: Error): ErrorInfo {
     const errorMsg = error.message;
-    let position = -1;
-    let line = 1;
-    let column = 1;
+    const nativeLocation = parseNativeJsonErrorLocation(input, errorMsg);
+    const manualLocation = findJsonErrorPosition(input);
+    let line = nativeLocation.line;
+    let column = nativeLocation.column;
     let customExpected: string[] = [];
     let customFound = '';
     let customMessage = '';
 
-    // Chrome/V8: "at position 123" 或 "(line 1 column 2)"
-    const posMatch = errorMsg.match(/at position (\d+)/i);
-    if (posMatch) {
-      position = parseInt(posMatch[1], 10);
-    }
-
-    // V8 新格式: "(line 1 column 2)"
-    const v8LineColMatch = errorMsg.match(/\(line (\d+) column (\d+)\)/i);
-    if (v8LineColMatch) {
-      line = parseInt(v8LineColMatch[1], 10);
-      column = parseInt(v8LineColMatch[2], 10);
-    }
-    // Firefox: "at line X column Y"
-    else {
-      const firefoxMatch = errorMsg.match(/at line (\d+) column (\d+)/i);
-      if (firefoxMatch) {
-        line = parseInt(firefoxMatch[1], 10);
-        column = parseInt(firefoxMatch[2], 10);
-      }
-    }
-
-    // 如果有位置信息但没有行列，根据位置计算
-    if (position >= 0 && line === 1 && column === 1) {
-      let currentPos = 0;
-      const lines = input.split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        const lineLength = lines[i].length;
-        if (currentPos + lineLength >= position) {
-          line = i + 1;
-          column = position - currentPos + 1;
-          break;
-        }
-        currentPos += lineLength + 1;
-      }
-    }
-
-    // WebKit 不提供位置信息，或者位置信息不准确时，使用手动解析
-    // 总是使用手动解析来获得更精确的错误信息
-    const foundPos = findJsonErrorPosition(input);
-    if (foundPos) {
-      // 如果手动解析的结果更精确（定位到键的位置），使用它
-      line = foundPos.line;
-      column = foundPos.column;
-      customExpected = [foundPos.expected];
-      customFound = foundPos.found;
-      if (foundPos.context) {
-        customMessage = `在 ${foundPos.context} 后缺少 '${foundPos.expected}' 字符`;
+    // 原生报错经常定位到“下一行首次无法继续解析的位置”。
+    // 如果手动解析能给出更早的定位，则优先使用更贴近真实错误点的结果。
+    if (manualLocation && (!nativeLocation.hasAccurateLocation || isEarlierLocation(manualLocation, nativeLocation))) {
+      line = manualLocation.line;
+      column = manualLocation.column;
+      customExpected = [manualLocation.expected];
+      customFound = manualLocation.found;
+      if (manualLocation.context) {
+        customMessage = `在 ${manualLocation.context} 后缺少 '${manualLocation.expected}' 字符`;
       } else {
-        customMessage = `此处缺少 '${foundPos.expected}' 字符`;
+        if (manualLocation.expected.includes('或')) {
+          customMessage = `此处之前缺少 ${manualLocation.expected} 分隔符`;
+        } else {
+          customMessage = `此处缺少 '${manualLocation.expected}' 字符`;
+        }
       }
     }
 
@@ -155,6 +133,65 @@
 
     const { expected, found } = parseExpectedAndFound(errorMsg, lineContent, column);
     return { line, column, message: getErrorDescription(errorMsg), lineContent, expected, found };
+  }
+
+  function isEarlierLocation(candidate: { line: number; column: number }, baseline: { line: number; column: number }): boolean {
+    return candidate.line < baseline.line || (candidate.line === baseline.line && candidate.column < baseline.column);
+  }
+
+  function parseNativeJsonErrorLocation(input: string, errorMsg: string): { line: number; column: number; hasAccurateLocation: boolean } {
+    const v8LineColMatch = errorMsg.match(/\(line (\d+) column (\d+)\)/i);
+    if (v8LineColMatch) {
+      return {
+        line: parseInt(v8LineColMatch[1], 10),
+        column: parseInt(v8LineColMatch[2], 10),
+        hasAccurateLocation: true
+      };
+    }
+
+    const firefoxMatch = errorMsg.match(/at line (\d+) column (\d+)/i);
+    if (firefoxMatch) {
+      return {
+        line: parseInt(firefoxMatch[1], 10),
+        column: parseInt(firefoxMatch[2], 10),
+        hasAccurateLocation: true
+      };
+    }
+
+    const posMatch = errorMsg.match(/at position (\d+)/i);
+    if (posMatch) {
+      const position = parseInt(posMatch[1], 10);
+      return positionToLineColumn(input, position);
+    }
+
+    return { line: 1, column: 1, hasAccurateLocation: false };
+  }
+
+  function positionToLineColumn(input: string, position: number): { line: number; column: number; hasAccurateLocation: boolean } {
+    let currentPos = 0;
+    const lines = input.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const lineLength = lines[i].length;
+      if (currentPos + lineLength >= position) {
+        return {
+          line: i + 1,
+          column: position - currentPos + 1,
+          hasAccurateLocation: true
+        };
+      }
+      currentPos += lineLength + 1;
+    }
+
+    if (lines.length === 0) {
+      return { line: 1, column: 1, hasAccurateLocation: false };
+    }
+
+    return {
+      line: lines.length,
+      column: lines[lines.length - 1].length + 1,
+      hasAccurateLocation: true
+    };
   }
 
   // 错误详细信息
@@ -178,14 +215,45 @@
       column: number;
       hasKey: boolean;
       hasValue: boolean;
-      keyLine?: number;   // 键所在行
-      keyColumn?: number; // 键所在列
-      keyContent?: string; // 键内容
+      keyLine?: number;
+      keyColumn?: number;
+      keyContent?: string;
+      lastValueLine?: number;
+      lastValueColumn?: number;
+      lastValueContext?: string;
+      lastCommaLine?: number;
+      lastCommaColumn?: number;
+      trailingComma?: boolean;
     }
     
     const stack: StackItem[] = [];
     type State = 'value' | 'key' | 'colon' | 'comma_or_end';
     let state: State = 'value';
+
+    const recordContainerValue = (line: number, column: number) => {
+      const top = stack[stack.length - 1];
+      if (!top) return;
+
+      top.hasValue = true;
+      top.lastValueLine = line;
+      top.lastValueColumn = column;
+      top.lastValueContext = top.char === '{' && top.keyContent ? `"${top.keyContent}"` : undefined;
+      top.trailingComma = false;
+    };
+
+    const missingDelimiterError = (expected: string, found: string, fallbackLine: number, fallbackColumn: number): ParseErrorDetail => {
+      const top = stack[stack.length - 1];
+      if (top?.lastValueLine !== undefined) {
+        return {
+          line: top.lastValueLine,
+          column: top.lastValueColumn || 1,
+          expected,
+          found,
+          context: top.lastValueContext
+        };
+      }
+      return { line: fallbackLine, column: fallbackColumn, expected, found };
+    };
 
     const skipWhitespace = () => {
       while (i < input.length && /\s/.test(input[i])) {
@@ -248,20 +316,24 @@
               top.keyLine = result.startLine;
               top.keyColumn = result.startColumn;
               top.keyContent = result.content;
+              top.trailingComma = false;
               state = 'colon';
             } else {
-              top.hasValue = true;
+              recordContainerValue(currentLine, column);
               state = 'comma_or_end';
             }
             continue;
           } else {
-            return { line: currentLine, column: currentColumn, expected: state === 'colon' ? ':' : ', 或 }', found: '"' };
+            return state === 'comma_or_end'
+              ? missingDelimiterError(', 或 }', '"', currentLine, currentColumn)
+              : { line: currentLine, column: currentColumn, expected: state === 'colon' ? ':' : ', 或 }', found: '"' };
           }
         } else if (inArray() || state === 'value') {
           const result = parseString();
           if (!result) {
             return { line: currentLine, column: currentColumn, expected: '完整的字符串', found: '未结束的字符串' };
           }
+          if (inArray()) recordContainerValue(currentLine, column);
           state = 'comma_or_end';
           continue;
         } else {
@@ -272,6 +344,9 @@
       // 处理对象开始 {
       if (char === '{') {
         if (state !== 'value') {
+          if (state === 'comma_or_end') {
+            return missingDelimiterError(inObject() ? ', 或 }' : ', 或 ]', '{', currentLine, currentColumn);
+          }
           return { line: currentLine, column: currentColumn, expected: state === 'colon' ? ':' : '值', found: '{' };
         }
         stack.push({ char: '{', line: currentLine, column: currentColumn, hasKey: false, hasValue: false });
@@ -287,6 +362,10 @@
         }
         const top = stack[stack.length - 1];
         
+        if (top.trailingComma) {
+          return { line: top.lastCommaLine || currentLine, column: top.lastCommaColumn || currentColumn, expected: '属性名', found: '}' };
+        }
+
         // 如果期望冒号（有键但没冒号），错误在键那一行
         if (state === 'colon' && top.keyLine !== undefined) {
           return { 
@@ -308,6 +387,7 @@
         }
         
         stack.pop();
+        if (stack.length > 0) recordContainerValue(currentLine, currentColumn);
         state = stack.length > 0 ? 'comma_or_end' : 'value';
         i++; column++;
         continue;
@@ -316,6 +396,9 @@
       // 处理数组开始 [
       if (char === '[') {
         if (state !== 'value') {
+          if (state === 'comma_or_end') {
+            return missingDelimiterError(inObject() ? ', 或 }' : ', 或 ]', '[', currentLine, currentColumn);
+          }
           const top = inObject() ? stack[stack.length - 1] : null;
           if (state === 'colon' && top?.keyLine !== undefined) {
             return { line: top.keyLine, column: top.keyColumn || 1, expected: ':', found: '[', context: `"${top.keyContent}"` };
@@ -333,10 +416,15 @@
         if (!inArray()) {
           return { line: currentLine, column: currentColumn, expected: inObject() ? ': 或 }' : '值', found: ']' };
         }
+        const top = stack[stack.length - 1];
+        if (top.trailingComma) {
+          return { line: top.lastCommaLine || currentLine, column: top.lastCommaColumn || currentColumn, expected: '值', found: ']' };
+        }
         if (state !== 'value' && state !== 'comma_or_end') {
           return { line: currentLine, column: currentColumn, expected: '值', found: ']' };
         }
         stack.pop();
+        if (stack.length > 0) recordContainerValue(currentLine, currentColumn);
         state = stack.length > 0 ? 'comma_or_end' : 'value';
         i++; column++;
         continue;
@@ -368,8 +456,17 @@
           top.keyLine = undefined;
           top.keyColumn = undefined;
           top.keyContent = undefined;
+          top.lastCommaLine = currentLine;
+          top.lastCommaColumn = currentColumn;
+          top.trailingComma = true;
           state = 'key';
         } else {
+          const top = stack[stack.length - 1];
+          if (top) {
+            top.lastCommaLine = currentLine;
+            top.lastCommaColumn = currentColumn;
+            top.trailingComma = true;
+          }
           state = 'value';
         }
         i++; column++;
@@ -387,6 +484,9 @@
       for (const kw of keywords) {
         if (input.substring(i, i + kw.len) === kw.word) {
           if (state !== 'value') {
+            if (state === 'comma_or_end') {
+              return missingDelimiterError(inObject() ? ', 或 }' : ', 或 ]', kw.word, currentLine, currentColumn);
+            }
             const top = inObject() ? stack[stack.length - 1] : null;
             if (state === 'colon' && top?.keyLine !== undefined) {
               return { line: top.keyLine, column: top.keyColumn || 1, expected: ':', found: kw.word, context: `"${top.keyContent}"` };
@@ -394,7 +494,7 @@
             return { line: currentLine, column: currentColumn, expected: ':', found: kw.word };
           }
           i += kw.len; column += kw.len;
-          if (inObject()) stack[stack.length - 1].hasValue = true;
+          if (inObject() || inArray()) recordContainerValue(currentLine, column - 1);
           state = 'comma_or_end';
           matched = true;
           break;
@@ -405,6 +505,9 @@
       // 处理数字
       if (/[-0-9]/.test(char)) {
         if (state !== 'value') {
+          if (state === 'comma_or_end') {
+            return missingDelimiterError(inObject() ? ', 或 }' : ', 或 ]', '数字', currentLine, currentColumn);
+          }
           const top = inObject() ? stack[stack.length - 1] : null;
           if (state === 'colon' && top?.keyLine !== undefined) {
             return { line: top.keyLine, column: top.keyColumn || 1, expected: ':', found: '数字', context: `"${top.keyContent}"` };
@@ -422,7 +525,7 @@
           if (i < input.length && /[-+]/.test(input[i])) { i++; column++; }
           while (i < input.length && /[0-9]/.test(input[i])) { i++; column++; }
         }
-        if (inObject()) stack[stack.length - 1].hasValue = true;
+        if (inObject() || inArray()) recordContainerValue(currentLine, column - 1);
         state = 'comma_or_end';
         continue;
       }
@@ -747,34 +850,106 @@
     return current;
   }
 
-  // 搜索
-  function searchInJson(obj: unknown, query: string, path = '$'): SearchResult[] {
-    const results: SearchResult[] = [];
-    const lowerQuery = query.toLowerCase();
-    function search(value: unknown, currentPath: string, key?: string) {
-      if (value === null) {
-        if ('null'.includes(lowerQuery)) results.push({ path: currentPath, key: key || '', value: 'null' });
-        return;
-      }
-      if (Array.isArray(value)) {
-        value.forEach((item, index) => search(item, `${currentPath}[${index}]`));
-      } else if (typeof value === 'object') {
-        for (const [k, v] of Object.entries(value)) {
-          const newPath = `${currentPath}.${k}`;
-          if (k.toLowerCase().includes(lowerQuery)) {
-            results.push({ path: newPath, key: k, value: JSON.stringify(v).substring(0, 50) });
-          }
-          search(v, newPath, k);
-        }
-      } else {
-        const strValue = String(value);
-        if (strValue.toLowerCase().includes(lowerQuery)) {
-          results.push({ path: currentPath, key: key || '', value: strValue.substring(0, 50) });
-        }
-      }
+  function buildSearchMatches(input: string, query: string): SearchMatch[] {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return [];
+
+    const normalizedInput = input.toLowerCase();
+    const matches: SearchMatch[] = [];
+    let fromIndex = 0;
+
+    while (fromIndex < normalizedInput.length) {
+      const foundIndex = normalizedInput.indexOf(normalizedQuery, fromIndex);
+      if (foundIndex === -1) break;
+
+      matches.push({
+        start: foundIndex,
+        end: foundIndex + normalizedQuery.length
+      });
+      fromIndex = foundIndex + Math.max(normalizedQuery.length, 1);
     }
-    search(obj, path);
-    return results.slice(0, 50);
+
+    return matches;
+  }
+
+  function escapeHtml(value: string): string {
+    return value
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function renderHighlightedInput(): string {
+    if (!jsonInput) return "";
+    if (!searchMatches.length) return escapeHtml(jsonInput);
+
+    let lastIndex = 0;
+    let highlighted = "";
+
+    searchMatches.forEach((match, index) => {
+      highlighted += escapeHtml(jsonInput.slice(lastIndex, match.start));
+      const matchText = escapeHtml(jsonInput.slice(match.start, match.end));
+      const className = index === activeSearchIndex ? "search-highlight active" : "search-highlight";
+      highlighted += `<mark class="${className}">${matchText}</mark>`;
+      lastIndex = match.end;
+    });
+
+    highlighted += escapeHtml(jsonInput.slice(lastIndex));
+    return highlighted;
+  }
+
+  async function jumpToSearchMatch(index: number) {
+    const textarea = inputTextarea;
+    const match = searchMatches[index];
+    if (!textarea || !match) return;
+
+    await tick();
+    textarea.focus();
+    textarea.setSelectionRange(match.start, match.end);
+    textarea.scrollTop = getScrollTopForPosition(match.start);
+    syncEditorScroll();
+  }
+
+  function navigateSearchMatch(direction: 1 | -1) {
+    if (!searchMatches.length) return;
+    const nextIndex = (activeSearchIndex + direction + searchMatches.length) % searchMatches.length;
+    activeSearchIndex = nextIndex;
+    void jumpToSearchMatch(nextIndex);
+  }
+
+  function handleSearchInput() {
+    const matches = buildSearchMatches(jsonInput, searchQuery);
+    searchMatches = matches;
+    lastSearchQuery = searchQuery;
+
+    if (!matches.length) {
+      activeSearchIndex = -1;
+      return;
+    }
+
+    activeSearchIndex = 0;
+    void jumpToSearchMatch(0);
+  }
+
+  function handleSearchKeydown(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      navigateSearchMatch(e.shiftKey ? -1 : 1);
+      return;
+    }
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      navigateSearchMatch(1);
+      return;
+    }
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      navigateSearchMatch(-1);
+    }
   }
 
   // 历史记录
@@ -800,6 +975,12 @@
   function deleteHistory(id: string, e: Event) {
     e.stopPropagation();
     history = history.filter(h => h.id !== id);
+  }
+
+  function handleHistoryKeydown(e: KeyboardEvent, item: HistoryItem) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    loadFromHistory(item);
   }
 
   function clearHistory() { history = []; }
@@ -849,18 +1030,49 @@
   }
 
   // 主要处理函数
-  async function handleModeClick(mode: string) {
-    if (isProcessing) return;
-    activeMode = mode;
-    if (jsonInput) await processJson();
+  function cancelScheduledProcess() {
+    if (!processTimer) return;
+    clearTimeout(processTimer);
+    processTimer = null;
   }
 
-  async function processJson() {
-    if (isProcessing || !jsonInput) return;
+  function scheduleProcessJson(delay = 300) {
+    cancelScheduledProcess();
+    processTimer = setTimeout(() => {
+      processTimer = null;
+      processJson();
+    }, delay);
+  }
+
+  function handleModeClick(mode: string) {
+    activeMode = mode;
+    cancelScheduledProcess();
+    processJson();
+  }
+
+  function processJson() {
+    cancelScheduledProcess();
+
+    if (!jsonInput) {
+      isProcessing = false;
+      errorInfo = null;
+      jsonOutput = "";
+      structOutput = "";
+      jsonStats = null;
+      parsedJson = null;
+      jsonPathResult = "";
+      return;
+    }
+
     isProcessing = true;
     errorInfo = null;
+    jsonOutput = "";
+    structOutput = "";
     jsonStats = null;
     parsedJson = null;
+    if (activeMode !== "query") {
+      jsonPathResult = "";
+    }
     
     try {
       let parsed: unknown;
@@ -878,12 +1090,14 @@
         jsonStats.totalSize = new Blob([jsonInput]).size;
       }
 
+      const indent = Number(indentSize) || 2;
+
       if (sortKeys && (activeMode === 'format' || activeMode === 'compress')) {
         parsed = sortJsonKeys(parsed);
       }
 
       if (activeMode === "format") {
-        jsonOutput = JSON.stringify(parsed, null, indentSize);
+        jsonOutput = JSON.stringify(parsed, null, indent);
         structOutput = "";
       } else if (activeMode === "compress") {
         jsonOutput = JSON.stringify(parsed);
@@ -895,8 +1109,8 @@
         if (jsonInput.startsWith('"') && jsonInput.endsWith('"')) {
           try {
             const unescaped = JSON.parse(jsonInput);
-            jsonOutput = typeof unescaped === "string" ? unescaped : JSON.stringify(unescaped, null, indentSize);
-          } catch { jsonOutput = JSON.stringify(parsed, null, indentSize); }
+            jsonOutput = typeof unescaped === "string" ? unescaped : JSON.stringify(unescaped, null, indent);
+          } catch { jsonOutput = JSON.stringify(parsed, null, indent); }
         } else {
           jsonOutput = JSON.stringify(jsonInput);
         }
@@ -905,15 +1119,14 @@
         jsonOutput = "✓ JSON 格式正确";
         structOutput = "";
       } else if (activeMode === "query") {
-        if (jsonPath) jsonPathResult = JSON.stringify(queryJsonPath(parsed, jsonPath), null, 2);
-        jsonOutput = JSON.stringify(parsed, null, indentSize);
+        if (jsonPath) {
+          const queryResult = queryJsonPath(parsed, jsonPath);
+          jsonPathResult = queryResult === undefined ? "undefined" : JSON.stringify(queryResult, null, indent);
+        } else {
+          jsonPathResult = "";
+        }
+        jsonOutput = JSON.stringify(parsed, null, indent);
         structOutput = "";
-      }
-
-      if (searchQuery && parsed) {
-        searchResults = searchInJson(parsed, searchQuery);
-      } else {
-        searchResults = [];
       }
     } catch (e: unknown) {
       errorInfo = { line: 0, column: 0, message: `处理错误: ${(e as Error).message || e}`, lineContent: '', expected: [], found: '' };
@@ -932,8 +1145,9 @@
   }
 
   function clearAll() {
+    cancelScheduledProcess();
     jsonInput = ""; jsonOutput = ""; structOutput = ""; errorInfo = null;
-    jsonStats = null; searchQuery = ""; searchResults = []; jsonPath = "";
+    jsonStats = null; searchQuery = ""; searchMatches = []; activeSearchIndex = -1; jsonPath = "";
     jsonPathResult = ""; parsedJson = null; collapsedPaths = new Set();
   }
 
@@ -985,9 +1199,27 @@
     }
   }
 
+  function getScrollTopForPosition(position: number): number {
+    const textarea = inputTextarea;
+    if (!textarea) return 0;
+    const contentBefore = jsonInput.slice(0, position);
+    const lineIndex = contentBefore.split('\n').length - 1;
+    const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 20;
+    return Math.max(0, lineIndex * lineHeight - textarea.clientHeight / 2 + lineHeight / 2);
+  }
+
+  function syncEditorScroll() {
+    if (!inputTextarea) return;
+    if (lineNumbersEl) lineNumbersEl.scrollTop = inputTextarea.scrollTop;
+    if (highlightLayerEl) {
+      highlightLayerEl.scrollTop = inputTextarea.scrollTop;
+      highlightLayerEl.scrollLeft = inputTextarea.scrollLeft;
+    }
+  }
+
   function jumpToErrorLine() {
     if (!errorInfo?.line) return;
-    const textarea = document.querySelector('.input-panel .code-textarea') as HTMLTextAreaElement;
+    const textarea = inputTextarea;
     if (!textarea) return;
     const lines = jsonInput.split('\n');
     let position = 0;
@@ -997,7 +1229,8 @@
     position += (errorInfo.column || 1) - 1;
     textarea.focus();
     textarea.setSelectionRange(position, position);
-    textarea.scrollTop = (errorInfo.line - 1) * 20 - textarea.clientHeight / 2;
+    textarea.scrollTop = getScrollTopForPosition(position);
+    syncEditorScroll();
   }
 
   function formatTime(date: Date): string {
@@ -1040,25 +1273,59 @@
   }
 
   $effect(() => {
-    if (jsonInput && activeMode) {
-      const timer = setTimeout(() => processJson(), 300);
-      return () => clearTimeout(timer);
+    if (jsonInput) {
+      scheduleProcessJson();
+      return () => cancelScheduledProcess();
     }
+    processJson();
   });
 
   $effect(() => {
-    if (jsonPath && activeMode === 'query' && jsonInput) {
-      try {
-        const parsed = JSON.parse(jsonInput);
-        jsonPathResult = JSON.stringify(queryJsonPath(parsed, jsonPath), null, 2);
-      } catch { jsonPathResult = ""; }
+    if (activeMode !== 'query' || parsedJson === null) {
+      jsonPathResult = "";
+      return;
     }
+
+    if (!jsonPath) {
+      jsonPathResult = "";
+      return;
+    }
+
+    const queryResult = queryJsonPath(parsedJson, jsonPath);
+    jsonPathResult = queryResult === undefined ? "undefined" : JSON.stringify(queryResult, null, Number(indentSize) || 2);
   });
 
   $effect(() => {
-    if (structLanguage && activeMode === 'struct' && jsonInput) {
-      processJson();
+    jsonInput;
+    requestAnimationFrame(() => syncEditorScroll());
+  });
+
+  $effect(() => {
+    const currentQuery = searchQuery;
+    const matches = buildSearchMatches(jsonInput, currentQuery);
+    searchMatches = matches;
+
+    if (!matches.length) {
+      activeSearchIndex = -1;
+      lastSearchQuery = currentQuery;
+      return;
     }
+
+    const currentIndex = untrack(() => activeSearchIndex);
+    const nextIndex = currentQuery !== lastSearchQuery
+      ? 0
+      : Math.min(Math.max(currentIndex, 0), matches.length - 1);
+    const shouldJump = Boolean(currentQuery) && (currentQuery !== lastSearchQuery || currentIndex !== nextIndex);
+
+    activeSearchIndex = nextIndex;
+
+    if (shouldJump) {
+      requestAnimationFrame(() => {
+        void jumpToSearchMatch(nextIndex);
+      });
+    }
+
+    lastSearchQuery = currentQuery;
   });
 </script>
 
@@ -1067,7 +1334,7 @@
   <div class="toolbar">
     <div class="toolbar-left">
       {#each modes as mode}
-        <button class="mode-btn" class:active={activeMode === mode.id} onclick={() => handleModeClick(mode.id)} disabled={isProcessing}>
+        <button class="mode-btn" class:active={activeMode === mode.id} onclick={() => handleModeClick(mode.id)}>
           <span class="mode-icon">{mode.icon}</span>
           <span class="mode-name">{mode.name}</span>
     </button>
@@ -1084,17 +1351,31 @@
 
   <!-- 选项栏 -->
   <div class="options-bar">
+    <div class="search-box">
+      <label class="search-label" for={searchInputId}>搜索:</label>
+      <input
+        id={searchInputId}
+        type="text"
+        placeholder="输入关键字后定位"
+        bind:value={searchQuery}
+        oninput={handleSearchInput}
+        onkeydown={handleSearchKeydown}
+      />
+      <span class="search-status">{searchMatches.length > 0 ? `${activeSearchIndex + 1}/${searchMatches.length}` : (searchQuery.trim() ? '0/0' : '')}</span>
+      <button type="button" class="search-nav-btn" onclick={() => navigateSearchMatch(-1)} disabled={searchMatches.length <= 1} aria-label="上一个匹配">↑</button>
+      <button type="button" class="search-nav-btn" onclick={() => navigateSearchMatch(1)} disabled={searchMatches.length <= 1} aria-label="下一个匹配">↓</button>
+    </div>
     <div class="option-group">
-      <label>缩进:</label>
-      <select bind:value={indentSize}>
+      <label for={indentSelectId}>缩进:</label>
+      <select id={indentSelectId} bind:value={indentSize} onchange={processJson}>
         <option value={2}>2空格</option>
         <option value={4}>4空格</option>
       </select>
     </div>
     {#if activeMode === 'struct'}
       <div class="option-group">
-        <label>语言:</label>
-        <select bind:value={structLanguage}>
+        <label for={structLanguageSelectId}>语言:</label>
+        <select id={structLanguageSelectId} bind:value={structLanguage} onchange={processJson}>
           {#each structLanguages as lang}
             <option value={lang.id}>{lang.name}</option>
           {/each}
@@ -1121,19 +1402,13 @@
         <button class="collapse-btn" onclick={() => collapseToLevel(2)}>折叠2级</button>
       </div>
     {/if}
-    <div class="search-box">
-      <input type="text" placeholder="🔍 搜索..." bind:value={searchQuery} oninput={processJson} />
-      {#if searchResults.length > 0}
-        <span class="search-badge">{searchResults.length}</span>
-      {/if}
-    </div>
   </div>
 
   <!-- JSONPath查询 -->
   {#if activeMode === 'query'}
     <div class="jsonpath-bar">
-      <label>JSONPath:</label>
-      <input type="text" placeholder="$.data.items[0]" bind:value={jsonPath} />
+      <label for={jsonPathInputId}>JSONPath:</label>
+      <input id={jsonPathInputId} type="text" placeholder="$.data.items[0]" bind:value={jsonPath} />
     </div>
   {/if}
 
@@ -1159,19 +1434,26 @@
             <span class="editor-info">{jsonInput.length.toLocaleString()} 字符 · {jsonInput.split('\n').length} 行</span>
           </div>
           <div class="editor-body">
-            <div class="line-numbers">
+            <div class="line-numbers" bind:this={lineNumbersEl}>
               {#each jsonInput.split('\n') as _, i}
                 <div class="line-num" class:error-line={errorInfo?.line === i + 1}>{i + 1}</div>
               {/each}
             </div>
-      <textarea 
-        bind:value={jsonInput} 
-              placeholder="在此粘贴或输入JSON数据...&#10;&#10;支持大型JSON文件，可使用 Tab 键缩进"
-              class="code-textarea"
-              spellcheck="false"
-              onkeydown={handleTabKey}
-      ></textarea>
-    </div>
+            <div class="input-editor-stack">
+              <div class="highlight-layer" bind:this={highlightLayerEl} aria-hidden="true">
+                <div class="highlight-content">{@html renderHighlightedInput()}</div>
+              </div>
+              <textarea
+                bind:value={jsonInput}
+                bind:this={inputTextarea}
+                placeholder="在此粘贴或输入JSON数据...&#10;&#10;支持大型JSON文件，可使用 Tab 键缩进"
+                class="code-textarea input-textarea"
+                spellcheck="false"
+                onkeydown={handleTabKey}
+                onscroll={syncEditorScroll}
+              ></textarea>
+            </div>
+          </div>
         </div>
 
         <!-- 分隔条 -->
@@ -1308,21 +1590,6 @@
     </div>
   {/if}
 
-  <!-- 搜索结果 -->
-  {#if searchResults.length > 0}
-    <div class="search-results">
-      <div class="results-title">🔍 找到 {searchResults.length} 个匹配</div>
-      <div class="results-scroll">
-        {#each searchResults.slice(0, 6) as result}
-          <div class="result-row">
-            <code class="result-path">{result.path}</code>
-            <span class="result-value">{result.value}</span>
-          </div>
-        {/each}
-      </div>
-    </div>
-  {/if}
-
   <!-- JSONPath结果 -->
   {#if activeMode === 'query' && jsonPathResult}
     <div class="jsonpath-result">
@@ -1343,11 +1610,11 @@
       </div>
       <div class="history-list">
         {#each history as item}
-          <button class="history-item" onclick={() => loadFromHistory(item)}>
+          <div class="history-item" role="button" tabindex="0" onclick={() => loadFromHistory(item)} onkeydown={(e) => handleHistoryKeydown(e, item)}>
             <span class="history-preview">{item.preview}</span>
             <span class="history-meta">{formatTime(item.timestamp)} · {formatSize(item.size)}</span>
-            <span class="history-delete" onclick={(e) => deleteHistory(item.id, e)}>×</span>
-          </button>
+            <button type="button" class="history-delete" aria-label="删除历史记录" onclick={(e) => deleteHistory(item.id, e)}>×</button>
+          </div>
         {/each}
       </div>
     </div>
@@ -1356,6 +1623,9 @@
 
 <style>
   .json-tool {
+    --json-editor-font-size: 0.85rem;
+    --json-editor-line-height: 1.5;
+    --json-editor-row-height: calc(var(--json-editor-font-size) * var(--json-editor-line-height));
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -1540,26 +1810,47 @@
   }
 
   .search-box {
-    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 240px;
   }
 
   .search-box input {
     padding: 0.3rem 0.5rem !important;
-    width: 120px;
+    width: 180px;
     font-size: 0.8rem !important;
     background: var(--bg-card) !important;
   }
 
-  .search-badge {
-    position: absolute;
-    right: 0.3rem;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 0.6rem;
-    padding: 0.1rem 0.3rem;
-    background: var(--primary);
-    color: white;
-    border-radius: 8px;
+  .search-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .search-status {
+    min-width: 2.75rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  .search-nav-btn {
+    padding: 0.2rem 0.45rem !important;
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    font-size: 0.75rem;
+    line-height: 1;
+  }
+
+  .search-nav-btn:hover:not(:disabled) {
+    border-color: var(--primary) !important;
+    transform: none !important;
+  }
+
+  .search-nav-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 
   /* JSONPath栏 */
@@ -1697,15 +1988,20 @@
     text-align: right;
     user-select: none;
     min-width: 40px;
-    overflow-y: auto;
+    overflow: hidden;
     flex-shrink: 0;
   }
 
   .line-num {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-height: var(--json-editor-row-height);
     padding: 0 0.4rem;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    line-height: 1.5;
+    font-size: var(--json-editor-font-size);
+    line-height: var(--json-editor-line-height);
     color: var(--text-muted);
   }
 
@@ -1716,14 +2012,15 @@
   }
 
   .code-textarea {
+    box-sizing: border-box;
     flex: 1;
     padding: 0.5rem;
     border: none !important;
     background: transparent !important;
     color: var(--text-primary);
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.85rem;
-    line-height: 1.5;
+    font-size: var(--json-editor-font-size);
+    line-height: var(--json-editor-line-height);
     resize: none;
     min-height: 100%;
   }
@@ -1731,6 +2028,63 @@
   .code-textarea:focus {
     outline: none;
     box-shadow: none !important;
+  }
+
+  .input-editor-stack {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .highlight-layer,
+  .input-textarea {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .highlight-layer {
+    overflow: hidden;
+    pointer-events: none;
+    padding: 0.5rem;
+    background: transparent;
+  }
+
+  .highlight-content {
+    min-height: 100%;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: var(--json-editor-font-size);
+    line-height: var(--json-editor-line-height);
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .input-textarea {
+    z-index: 1;
+    color: transparent;
+    caret-color: var(--text-primary);
+    background: transparent !important;
+  }
+
+  .input-textarea::placeholder {
+    color: var(--text-muted);
+  }
+
+  .highlight-content :global(.search-highlight) {
+    background: rgba(250, 204, 21, 0.35);
+    border-radius: 3px;
+    color: inherit;
+    padding: 0;
+  }
+
+  .highlight-content :global(.search-highlight.active) {
+    background: rgba(249, 115, 22, 0.55);
+    box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.45);
   }
 
   .output-body {
@@ -2004,50 +2358,6 @@
     color: #f87171;
   }
 
-  /* 搜索结果 */
-  .search-results {
-    background: var(--bg-dark);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-  }
-
-  .results-title {
-    padding: 0.4rem 0.6rem;
-    background: var(--bg-card);
-    border-bottom: 1px solid var(--border);
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-  }
-
-  .results-scroll {
-    max-height: 100px;
-    overflow-y: auto;
-  }
-
-  .result-row {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.3rem 0.6rem;
-    border-bottom: 1px solid var(--border);
-    font-size: 0.75rem;
-  }
-
-  .result-path {
-    color: var(--accent);
-    background: transparent !important;
-    padding: 0 !important;
-    font-size: 0.7rem;
-  }
-
-  .result-value {
-    color: var(--text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   /* JSONPath结果 */
   .jsonpath-result {
     display: flex;
@@ -2171,9 +2481,13 @@
   }
 
   .history-delete {
+    background: transparent;
+    border: none;
+    padding: 0;
     font-size: 0.9rem;
     color: var(--text-muted);
     opacity: 0;
+    cursor: pointer;
   }
 
   .history-item:hover .history-delete {
