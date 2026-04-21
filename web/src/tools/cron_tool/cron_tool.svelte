@@ -63,8 +63,8 @@
 <div class="cron-tool">
     <div class="header-section">
         <div class="timezone-select">
-            <label>时区：</label>
-            <select bind:value={timezone}>
+            <label for="cron-timezone">时区：</label>
+            <select id="cron-timezone" bind:value={timezone}>
                 {#each Intl.supportedValuesOf("timeZone") as tz}
                     <option value={tz}>{tz.replace(/_/g, " ")}</option>
                 {/each}
@@ -74,13 +74,14 @@
 
     <div class="input-section">
         <div class="input-header">
-            <label>Cron 表达式</label>
+            <label for="cron-expression-input">Cron 表达式</label>
             {#if isLoading}
                 <span class="loading-badge">解析中...</span>
             {/if}
         </div>
         
         <input
+            id="cron-expression-input"
             bind:value={cronExpression}
             class:error={!!errorMessage}
             placeholder="例如: 0 9 * * 1-5"

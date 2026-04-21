@@ -359,7 +359,7 @@
             </div>
 
             <div class="value-group">
-                <label>RGB</label>
+                <div class="value-group-title">RGB</div>
                 <div class="rgb-inputs">
                     <div class="rgb-input">
                         <span>R</span>
@@ -399,7 +399,7 @@
             </div>
 
             <div class="value-group">
-                <label>HSL</label>
+                <div class="value-group-title">HSL</div>
                 <div class="hsl-inputs">
                     <div class="hsl-input">
                         <span>H</span>
@@ -744,7 +744,8 @@
         gap: 0.5rem;
     }
 
-    .value-group label {
+    .value-group label,
+    .value-group-title {
         font-size: 0.85rem;
         font-weight: 500;
         color: var(--text-secondary);

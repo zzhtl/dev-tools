@@ -81,7 +81,7 @@
 <div class="uuid-tool">
   <div class="controls">
     <div class="control-group">
-      <label>UUID 版本</label>
+      <div class="control-group-title">UUID 版本</div>
       <div class="radio-group">
         <label class="radio-label">
           <input type="radio" bind:group={uuidVersion} value="v4" />
@@ -106,7 +106,7 @@
     </div>
 
     <div class="control-group">
-      <label>格式选项</label>
+      <div class="control-group-title">格式选项</div>
       <div class="checkbox-group">
         <label class="checkbox-label">
           <input type="checkbox" bind:checked={uppercase} />
@@ -189,7 +189,8 @@
     gap: 0.5rem;
   }
 
-  .control-group > label {
+  .control-group > label,
+  .control-group-title {
     font-size: 0.85rem;
     font-weight: 500;
     color: var(--text-secondary);
@@ -331,4 +332,3 @@
     line-height: 1.5;
   }
 </style>
-

@@ -6,6 +6,7 @@
     let previewUrl = $state("");
     let copied = $state(false);
     let isDragging = $state(false);
+    let fileInputEl = $state<HTMLInputElement | null>(null);
 
     function handleFileChange(event: Event) {
         const fileInput = event.target as HTMLInputElement;
@@ -73,8 +74,13 @@
     }
 
     function openFileDialog() {
-        const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-        input?.click();
+        fileInputEl?.click();
+    }
+
+    function handleUploadAreaKeydown(event: KeyboardEvent) {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        openFileDialog();
     }
 </script>
 
@@ -87,10 +93,12 @@
         ondragover={handleDragOver}
         ondragleave={handleDragLeave}
         onclick={openFileDialog}
+        onkeydown={handleUploadAreaKeydown}
         role="button"
         tabindex="0"
     >
         <input 
+            bind:this={fileInputEl}
             type="file" 
             accept="image/*" 
             onchange={handleFileChange}

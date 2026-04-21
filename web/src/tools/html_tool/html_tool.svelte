@@ -165,8 +165,6 @@
 </script>
 
 <div class="html-tool">
-  <h1>HTML工具</h1>
-  
   <div class="tab-container">
     <div class="tabs">
       <button 
@@ -251,12 +249,6 @@
     width: 100%;
     max-width: 100%;
     margin: 0 auto;
-  }
-  
-  h1 {
-    margin-top: 0;
-    margin-bottom: 1.5rem;
-    color: var(--text-color);
   }
   
   .tab-container {

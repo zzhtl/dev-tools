@@ -626,9 +626,10 @@
                                     <div class="custom-size-section">
                                         <div class="size-inputs">
                                             <div class="size-input-group">
-                                                <label>宽度</label>
+                                                <label for="image-resize-width">宽度</label>
                                                 <div class="input-wrapper">
                                                     <input 
+                                                        id="image-resize-width"
                                                         type="number" 
                                                         bind:value={resizeWidth}
                                                         oninput={updateHeight}
@@ -649,9 +650,10 @@
                                                 </svg>
                                             </div>
                                             <div class="size-input-group">
-                                                <label>高度</label>
+                                                <label for="image-resize-height">高度</label>
                                                 <div class="input-wrapper">
                                                     <input 
+                                                        id="image-resize-height"
                                                         type="number" 
                                                         bind:value={resizeHeight}
                                                         oninput={updateWidth}

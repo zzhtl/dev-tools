@@ -78,7 +78,7 @@
 <div class="qrcode-tool">
     <div class="input-section">
         <div class="input-header">
-            <label>输入内容</label>
+            <label for="qrcode-text-input">输入内容</label>
             <div class="preset-buttons">
                 {#each presets as preset}
                     <button 
@@ -92,6 +92,7 @@
             </div>
         </div>
         <textarea
+            id="qrcode-text-input"
             bind:value={text}
             placeholder="输入文本、网址、或其他内容..."
             rows="4"
@@ -104,7 +105,7 @@
             <h3>生成选项</h3>
             
             <div class="option-group">
-                <label>二维码尺寸</label>
+                <div class="option-group-title">二维码尺寸</div>
                 <div class="size-options">
                     {#each [128, 256, 512, 1024] as size}
                         <button
@@ -119,7 +120,7 @@
             </div>
 
             <div class="option-group">
-                <label>容错级别</label>
+                <div class="option-group-title">容错级别</div>
                 <div class="level-options">
                     {#each [
                         { value: "L", label: "L (7%)", desc: "低" },
@@ -140,7 +141,7 @@
             </div>
 
             <div class="option-group">
-                <label>颜色设置</label>
+                <div class="option-group-title">颜色设置</div>
                 <div class="color-options">
                     <div class="color-input">
                         <span>前景色</span>
@@ -298,7 +299,7 @@
         margin-bottom: 0;
     }
 
-    .option-group > label {
+    .option-group-title {
         display: block;
         font-size: 0.85rem;
         color: var(--text-secondary);

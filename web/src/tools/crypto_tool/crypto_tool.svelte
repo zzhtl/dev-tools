@@ -208,16 +208,18 @@
             {#if isRSA}
                 <div class="key-grid">
                     <div class="key-input-group">
-                        <label>公钥 (用于加密)</label>
+                        <label for="crypto-public-key">公钥 (用于加密)</label>
                         <textarea
+                            id="crypto-public-key"
                             bind:value={publicKey}
                             placeholder="RSA公钥..."
                             rows="4"
                         ></textarea>
                     </div>
                     <div class="key-input-group">
-                        <label>私钥 (用于解密)</label>
+                        <label for="crypto-private-key">私钥 (用于解密)</label>
                         <textarea
+                            id="crypto-private-key"
                             bind:value={privateKey}
                             placeholder="RSA私钥..."
                             rows="4"
@@ -226,8 +228,9 @@
                 </div>
             {:else}
                 <div class="key-input-group">
-                    <label>密钥</label>
+                    <label for="crypto-secret-key">密钥</label>
                     <input
+                        id="crypto-secret-key"
                         type="text"
                         bind:value={privateKey}
                         placeholder="输入加密密钥..."

@@ -28,6 +28,13 @@
       ]
     },
     {
+      name: "时间日期",
+      tools: [
+        { id: "timeConvert", name: "时间转换", icon: "⏱", desc: "时间戳与日期转换" },
+        { id: "cronTool", name: "Cron 表达式", icon: "⏰", desc: "Cron表达式解析" },
+      ]
+    },
+    {
       name: "编码加密",
       tools: [
         { id: "cryptoTool", name: "加密解密", icon: "🔐", desc: "AES/RSA/DES加解密" },
@@ -45,13 +52,6 @@
       ]
     },
     {
-      name: "时间日期",
-      tools: [
-        { id: "timeConvert", name: "时间转换", icon: "⏱", desc: "时间戳与日期转换" },
-        { id: "cronTool", name: "Cron 表达式", icon: "⏰", desc: "Cron表达式解析" },
-      ]
-    },
-    {
       name: "网络工具",
       tools: [
         { id: "dnsTool", name: "DNS 解析", icon: "◎", desc: "域名DNS查询" },
@@ -65,14 +65,6 @@
       ]
     }
   ];
-
-  function getActiveTool() {
-    for (const category of toolCategories) {
-      const tool = category.tools.find(t => t.id === activeTab);
-      if (tool) return tool;
-    }
-    return null;
-  }
 
   function toggleSidebar() {
     sidebarCollapsed = !sidebarCollapsed;
@@ -122,18 +114,6 @@
   </aside>
 
   <div class="main-content">
-    <header class="content-header">
-      <div class="header-info">
-        {#if getActiveTool()}
-          <h1 class="page-title">
-            <span class="title-icon">{getActiveTool()?.icon}</span>
-            {getActiveTool()?.name}
-          </h1>
-          <p class="page-desc">{getActiveTool()?.desc}</p>
-        {/if}
-      </div>
-    </header>
-
     <div class="content-body">
       <div class="tool-container">
         {#if activeTab === "jsonTool"}
@@ -374,45 +354,11 @@
     background: var(--bg-dark);
   }
 
-  .content-header {
-    padding: 1.25rem 2rem;
-    background: var(--bg-card);
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .header-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .page-title {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    font-size: 1.35rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .title-icon {
-    font-size: 1.1rem;
-    font-family: 'JetBrains Mono', monospace;
-    color: var(--accent);
-  }
-
-  .page-desc {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-  }
-
   .content-body {
     flex: 1;
+    display: flex;
     overflow: auto;
-    padding: 1.5rem 2rem;
+    padding: 1.5rem;
   }
 
   .content-body::-webkit-scrollbar {
@@ -433,11 +379,89 @@
   }
 
   .tool-container {
+    flex: 1;
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 1.5rem;
-    min-height: calc(100vh - 180px);
+    padding: 1rem;
+    min-height: 100%;
+  }
+
+  :global(.tool-container .json-tool),
+  :global(.tool-container .cron-tool),
+  :global(.tool-container .crypto-tool),
+  :global(.tool-container .cmd-tool),
+  :global(.tool-container .time-tool),
+  :global(.tool-container .qrcode-tool),
+  :global(.tool-container .base64-tool),
+  :global(.tool-container .dns-tool),
+  :global(.tool-container .regex-tool),
+  :global(.tool-container .html-tool),
+  :global(.tool-container .color-tool),
+  :global(.tool-container .image-tool),
+  :global(.tool-container .uuid-tool),
+  :global(.tool-container .hash-tool),
+  :global(.tool-container .url-tool) {
+    gap: 1rem !important;
+  }
+
+  :global(.tool-container .tool-header) {
+    display: none !important;
+  }
+
+  :global(.tool-container .header-desc) {
+    display: none !important;
+  }
+
+  :global(.tool-container .header-section),
+  :global(.tool-container .search-section),
+  :global(.tool-container .input-section),
+  :global(.tool-container .results-section),
+  :global(.tool-container .presets-section),
+  :global(.tool-container .options-section),
+  :global(.tool-container .preview-section),
+  :global(.tool-container .controls),
+  :global(.tool-container .algorithm-selector),
+  :global(.tool-container .key-section),
+  :global(.tool-container .jsonpath-result),
+  :global(.tool-container .history-section),
+  :global(.tool-container .info-section),
+  :global(.tool-container .reference-section),
+  :global(.tool-container .quick-presets),
+  :global(.tool-container .editor-layout),
+  :global(.tool-container .toolbar),
+  :global(.tool-container .options-bar),
+  :global(.tool-container .stats-bar),
+  :global(.tool-container .error-panel) {
+    margin-top: 0 !important;
+  }
+
+  :global(.tool-container .input-section),
+  :global(.tool-container .results-section),
+  :global(.tool-container .presets-section),
+  :global(.tool-container .options-section),
+  :global(.tool-container .preview-section),
+  :global(.tool-container .controls),
+  :global(.tool-container .algorithm-selector),
+  :global(.tool-container .key-section),
+  :global(.tool-container .info-section),
+  :global(.tool-container .reference-section),
+  :global(.tool-container .quick-presets) {
+    padding-top: 0.875rem !important;
+    padding-bottom: 0.875rem !important;
+  }
+
+  :global(.tool-container .section-header),
+  :global(.tool-container .results-header),
+  :global(.tool-container .result-header),
+  :global(.tool-container .preview-header),
+  :global(.tool-container .panel-header),
+  :global(.tool-container .input-header),
+  :global(.tool-container .editor-header),
+  :global(.tool-container .history-header),
+  :global(.tool-container .reference-header),
+  :global(.tool-container .key-header) {
+    margin-bottom: 0.5rem !important;
   }
 
   :global(.tool-container input),
@@ -518,6 +542,10 @@
   :global(.tool-container h2),
   :global(.tool-container h3) {
     color: var(--text-primary);
+  }
+
+  :global(.tool-container h3) {
+    font-size: 0.95rem;
   }
 
   :global(.tool-container p),

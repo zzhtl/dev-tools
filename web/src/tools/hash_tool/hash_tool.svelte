@@ -26,11 +26,11 @@
 
     setTimeout(() => {
       try {
-        let data: string | CryptoJS.lib.WordArray;
+        let data: string | unknown;
         
         if (inputType === "file" && fileContent) {
           // 将 ArrayBuffer 转换为 WordArray
-          const wordArray = CryptoJS.lib.WordArray.create(fileContent as any);
+          const wordArray = CryptoJS.lib.WordArray.create(fileContent);
           data = wordArray;
         } else {
           data = inputText;
@@ -488,4 +488,3 @@
     font-size: 2.5rem;
   }
 </style>
-
