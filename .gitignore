@@ -1,14 +1,19 @@
 .DS_Store
-node_modules
-/build
-/.svelte-kit
-/package
 .env
 .env.*
 !.env.example
-vite.config.js.timestamp-*
-vite.config.ts.timestamp-*
-target
+
+# Rust
+/target
+
+# 前端构建产物（由 build.rs + bun 自动生成）
+/dist
+
+# 前端依赖与缓存（由 bun 管理）
+/web/node_modules
+/web/.vite
+
+# 编辑器
 /.vscode
 /.zed
 .cursor*
