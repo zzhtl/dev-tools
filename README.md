@@ -120,7 +120,7 @@ Latest builds are available on [GitHub Releases](https://github.com/zzhtl/dev-to
 
 ## License
 
-[MIT](./LICENSE)
+[Apache-2.0](./LICENSE)
 
 ---
 
@@ -246,4 +246,4 @@ dev-tools/
 
 ## License
 
-[MIT](./LICENSE)
+[Apache-2.0](./LICENSE)

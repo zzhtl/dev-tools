@@ -3,7 +3,7 @@ name = "dev-tools"
 version = "0.2.0"
 edition = "2021"
 description = "开发者工具箱：单文件 Rust Web 应用"
-license = "MIT"
+license = "Apache-2.0"
 
 [[bin]]
 name = "dev-tools"
