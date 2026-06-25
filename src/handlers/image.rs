@@ -1,7 +1,6 @@
 use axum::extract::Multipart;
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use image::codecs::{
     bmp::BmpEncoder, ico::IcoEncoder, jpeg::JpegEncoder, png::PngEncoder, webp::WebPEncoder,
 };
@@ -9,7 +8,7 @@ use image::{DynamicImage, GenericImageView, ImageEncoder, ImageFormat};
 use serde::Deserialize;
 use std::io::Cursor;
 
-use crate::handlers::dns::AppError;
+use crate::handlers::error::AppError;
 
 const MAX_UPLOAD_BYTES: usize = 100 * 1024 * 1024;
 
@@ -60,10 +59,6 @@ pub struct ResizeOptions {
 pub struct ConvertOptions {
     pub quality: Option<u8>,
     pub resize: Option<ResizeOptions>,
-}
-
-pub async fn formats() -> Json<Vec<&'static str>> {
-    Json(vec!["PNG", "JPEG", "GIF", "WEBP", "BMP", "ICO"])
 }
 
 pub async fn convert(mut mp: Multipart) -> Result<Response, AppError> {
@@ -134,22 +129,22 @@ pub async fn convert(mut mp: Multipart) -> Result<Response, AppError> {
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("image");
-    let out_name = format!("{file_stem}.{}", format.extension());
+    let out_name = format!("{}.{}", sanitize_stem(file_stem), format.extension());
     let (w, h) = img.dimensions();
+
+    // out_name 已净化为 ASCII，header 构造不会失败；仍用安全回退避免任何 panic。
+    let safe = |s: String| HeaderValue::from_str(&s).unwrap_or_else(|_| HeaderValue::from_static("image"));
 
     let mut headers = HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(format.mime()));
     headers.insert(
         header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&format!("attachment; filename=\"{out_name}\"")).unwrap(),
+        safe(format!("attachment; filename=\"{out_name}\"")),
     );
-    headers.insert("X-File-Name", HeaderValue::from_str(&out_name).unwrap());
-    headers.insert(
-        "X-File-Size",
-        HeaderValue::from_str(&encoded.len().to_string()).unwrap(),
-    );
-    headers.insert("X-Width", HeaderValue::from_str(&w.to_string()).unwrap());
-    headers.insert("X-Height", HeaderValue::from_str(&h.to_string()).unwrap());
+    headers.insert("X-File-Name", safe(out_name.clone()));
+    headers.insert("X-File-Size", safe(encoded.len().to_string()));
+    headers.insert("X-Width", safe(w.to_string()));
+    headers.insert("X-Height", safe(h.to_string()));
     headers.insert(
         "Access-Control-Expose-Headers",
         HeaderValue::from_static("X-File-Name, X-File-Size, X-Width, X-Height"),
@@ -200,7 +195,7 @@ fn encode(img: &DynamicImage, format: OutputFormat, quality: Option<u8>) -> anyh
     let mut buf = Cursor::new(Vec::<u8>::new());
     match format {
         OutputFormat::JPEG => {
-            let q = quality.unwrap_or(90).min(100);
+            let q = quality.unwrap_or(90).clamp(1, 100);
             let encoder = JpegEncoder::new_with_quality(&mut buf, q);
             let rgb = img.to_rgb8();
             encoder.write_image(
@@ -259,4 +254,24 @@ fn encode(img: &DynamicImage, format: OutputFormat, quality: Option<u8>) -> anyh
 
 fn bad_request(msg: &str) -> Response {
     (StatusCode::BAD_REQUEST, msg.to_string()).into_response()
+}
+
+/// 将用户文件名净化为 ASCII 安全的 stem（用于响应头，避免非 ASCII 文件名导致 panic）。
+fn sanitize_stem(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let trimmed = cleaned.trim_matches('_');
+    if trimmed.is_empty() {
+        "image".to_string()
+    } else {
+        trimmed.to_string()
+    }
 }

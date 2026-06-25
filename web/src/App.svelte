@@ -14,6 +14,9 @@
   import UuidTool from "./tools/uuid_tool/uuid_tool.svelte";
   import HashTool from "./tools/hash_tool/hash_tool.svelte";
   import UrlTool from "./tools/url_tool/url_tool.svelte";
+  import JwtTool from "./tools/jwt_tool/jwt_tool.svelte";
+  import TextDiffTool from "./tools/text_diff_tool/text_diff_tool.svelte";
+  import MarkdownTool from "./tools/markdown_tool/markdown_tool.svelte";
 
   let activeTab = $state("jsonTool");
   let sidebarCollapsed = $state(false);
@@ -22,9 +25,11 @@
     {
       name: "数据处理",
       tools: [
-        { id: "jsonTool", name: "JSON 工具", icon: "{ }", desc: "格式化、压缩、转Go结构体" },
+        { id: "jsonTool", name: "JSON 工具", icon: "{ }", desc: "格式化、转换、Diff、Schema、查询" },
         { id: "regexTool", name: "正则表达式", icon: ".*", desc: "正则测试与匹配" },
         { id: "htmlTool", name: "HTML 工具", icon: "</>", desc: "格式化、压缩、预览" },
+        { id: "textDiffTool", name: "文本对比", icon: "⇆", desc: "两段文本差异对比" },
+        { id: "markdownTool", name: "Markdown", icon: "M↓", desc: "Markdown 实时预览" },
       ]
     },
     {
@@ -38,6 +43,7 @@
       name: "编码加密",
       tools: [
         { id: "cryptoTool", name: "加密解密", icon: "🔐", desc: "AES/RSA/DES加解密" },
+        { id: "jwtTool", name: "JWT 解析", icon: "🔑", desc: "解码与验签 JWT" },
         { id: "base64Tool", name: "Base64", icon: "📄", desc: "图片转Base64编码" },
         { id: "hashTool", name: "Hash 计算", icon: "#", desc: "MD5/SHA哈希计算" },
         { id: "urlTool", name: "URL 编解码", icon: "%", desc: "URL编码与解码" },
@@ -146,6 +152,12 @@
           <HashTool />
         {:else if activeTab === "urlTool"}
           <UrlTool />
+        {:else if activeTab === "jwtTool"}
+          <JwtTool />
+        {:else if activeTab === "textDiffTool"}
+          <TextDiffTool />
+        {:else if activeTab === "markdownTool"}
+          <MarkdownTool />
         {/if}
       </div>
     </div>
@@ -401,7 +413,10 @@
   :global(.tool-container .image-tool),
   :global(.tool-container .uuid-tool),
   :global(.tool-container .hash-tool),
-  :global(.tool-container .url-tool) {
+  :global(.tool-container .url-tool),
+  :global(.tool-container .jwt-tool),
+  :global(.tool-container .text-diff-tool),
+  :global(.tool-container .markdown-tool) {
     gap: 1rem !important;
   }
 

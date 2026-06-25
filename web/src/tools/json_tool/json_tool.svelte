@@ -1,5 +1,8 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
+  import { apiJson } from "../../lib/api";
+  import { downloadBlob } from "../../lib/download";
+  import { diffLines, type DiffResult } from "../../lib/diff";
 
   let jsonInput = $state("");
   let jsonOutput = $state("");
@@ -33,6 +36,17 @@
   const structLanguageSelectId = "json-struct-language";
   const jsonPathInputId = "json-path-input";
   const searchInputId = "json-search-input";
+
+  // 新增能力的状态
+  let convertFrom = $state("json");
+  let convertTo = $state("yaml");
+  let schemaMode = $state<"generate" | "validate">("generate");
+  let schemaInput = $state(""); // validate 模式下的 schema
+  let jsonInputB = $state(""); // diff 模式的第二输入
+  let queryEngine = $state<"jsonpath" | "jq">("jsonpath");
+  let backendError = $state(""); // convert/schema/query 后端错误
+  let schemaResult = $state<{ valid: boolean; errors: { path: string; message: string }[] } | null>(null);
+  let diffResult = $state<DiffResult | null>(null);
 
   interface ErrorInfo {
     line: number;
@@ -72,10 +86,13 @@
   const modes = [
     { id: "format", name: "格式化", icon: "{ }" },
     { id: "compress", name: "压缩", icon: "→" },
+    { id: "convert", name: "格式互转", icon: "⇄" },
     { id: "struct", name: "转结构体", icon: "</>" },
+    { id: "diff", name: "对比", icon: "⇆" },
+    { id: "schema", name: "Schema", icon: "✓S" },
+    { id: "query", name: "查询", icon: "?" },
     { id: "escape", name: "转义", icon: "\\" },
     { id: "validate", name: "验证", icon: "✓" },
-    { id: "query", name: "查询", icon: "?" },
   ];
 
   const structLanguages = [
@@ -86,6 +103,25 @@
     { id: "cpp", name: "C++", ext: "cpp" },
     { id: "csharp", name: "C#", ext: "cs" },
   ];
+
+  // 格式互转支持的数据格式
+  const dataFormats = [
+    { id: "json", name: "JSON" },
+    { id: "yaml", name: "YAML" },
+    { id: "toml", name: "TOML" },
+    { id: "xml", name: "XML" },
+    { id: "csv", name: "CSV" },
+  ];
+
+  // 右侧面板角色：输出 / diff 第二输入 / schema 输入
+  const rightPanelRole = $derived(
+    activeMode === "diff"
+      ? "inputB"
+      : activeMode === "schema" && schemaMode === "validate"
+        ? "schemaInput"
+        : "output",
+  );
+  const outputContent = $derived(activeMode === "struct" ? structOutput : jsonOutput);
 
   // 解析JSON错误 - 支持多种浏览器引擎(V8/WebKit/Firefox)
   function parseJsonError(input: string, error: Error): ErrorInfo {
@@ -834,22 +870,6 @@
   }
 
   // JSONPath 查询
-  function queryJsonPath(obj: unknown, path: string): unknown {
-    if (!path || path === '$') return obj;
-    const parts = path.replace(/^\$\.?/, '').split(/\.|\[|\]/).filter(Boolean);
-    let current: unknown = obj;
-    for (const part of parts) {
-      if (current === null || current === undefined) return undefined;
-      if (Array.isArray(current)) {
-        const index = parseInt(part, 10);
-        current = !isNaN(index) ? current[index] : undefined;
-      } else if (typeof current === 'object') {
-        current = (current as Record<string, unknown>)[part];
-      } else return undefined;
-    }
-    return current;
-  }
-
   function buildSearchMatches(input: string, query: string): SearchMatch[] {
     const normalizedQuery = query.trim().toLowerCase();
     if (!normalizedQuery) return [];
@@ -1052,59 +1072,82 @@
 
   function processJson() {
     cancelScheduledProcess();
+    errorInfo = null;
+    backendError = "";
+
+    // diff：两侧文本对比，容错，无需 JSON.parse
+    if (activeMode === "diff") {
+      runDiff();
+      isProcessing = false;
+      return;
+    }
 
     if (!jsonInput) {
       isProcessing = false;
-      errorInfo = null;
       jsonOutput = "";
       structOutput = "";
       jsonStats = null;
       parsedJson = null;
       jsonPathResult = "";
+      schemaResult = null;
       return;
     }
 
+    // convert：源格式可能非 JSON，直接交后端
+    if (activeMode === "convert") {
+      void runConvert();
+      return;
+    }
+
+    // 其余模式输入应为合法 JSON
     isProcessing = true;
-    errorInfo = null;
     jsonOutput = "";
     structOutput = "";
     jsonStats = null;
     parsedJson = null;
+    schemaResult = null;
     if (activeMode !== "query") {
       jsonPathResult = "";
     }
-    
+
+    let parsed: unknown;
     try {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(jsonInput);
-        parsedJson = parsed;
-        addToHistory();
-      } catch (e) {
-        errorInfo = parseJsonError(jsonInput, e as Error);
-        return;
-      }
+      parsed = JSON.parse(jsonInput);
+      parsedJson = parsed;
+      addToHistory();
+    } catch (e) {
+      errorInfo = parseJsonError(jsonInput, e as Error);
+      isProcessing = false;
+      return;
+    }
 
-      if (showStats) {
-        jsonStats = calculateStats(parsed);
-        jsonStats.totalSize = new Blob([jsonInput]).size;
-      }
+    if (showStats) {
+      jsonStats = calculateStats(parsed);
+      jsonStats.totalSize = new Blob([jsonInput]).size;
+    }
 
+    // 后端模式：schema / query（输入已确认为合法 JSON）
+    if (activeMode === "schema") {
+      void runSchema();
+      return;
+    }
+    if (activeMode === "query") {
+      void runQuery(parsed);
+      return;
+    }
+
+    // 纯前端同步模式
+    try {
       const indent = Number(indentSize) || 2;
-
-      if (sortKeys && (activeMode === 'format' || activeMode === 'compress')) {
+      if (sortKeys && (activeMode === "format" || activeMode === "compress")) {
         parsed = sortJsonKeys(parsed);
       }
-
       if (activeMode === "format") {
         jsonOutput = JSON.stringify(parsed, null, indent);
-        structOutput = "";
       } else if (activeMode === "compress") {
         jsonOutput = JSON.stringify(parsed);
-        structOutput = "";
       } else if (activeMode === "struct") {
         structOutput = generateStruct(parsed, structLanguage);
-        jsonOutput = "";
       } else if (activeMode === "escape") {
         if (jsonInput.startsWith('"') && jsonInput.endsWith('"')) {
           try {
@@ -1114,25 +1157,109 @@
         } else {
           jsonOutput = JSON.stringify(jsonInput);
         }
-        structOutput = "";
       } else if (activeMode === "validate") {
         jsonOutput = "✓ JSON 格式正确";
-        structOutput = "";
-      } else if (activeMode === "query") {
-        if (jsonPath) {
-          const queryResult = queryJsonPath(parsed, jsonPath);
-          jsonPathResult = queryResult === undefined ? "undefined" : JSON.stringify(queryResult, null, indent);
-        } else {
-          jsonPathResult = "";
-        }
-        jsonOutput = JSON.stringify(parsed, null, indent);
-        structOutput = "";
       }
     } catch (e: unknown) {
       errorInfo = { line: 0, column: 0, message: `处理错误: ${(e as Error).message || e}`, lineContent: '', expected: [], found: '' };
     } finally {
       isProcessing = false;
     }
+  }
+
+  async function runConvert() {
+    isProcessing = true;
+    backendError = "";
+    jsonOutput = "";
+    structOutput = "";
+    parsedJson = null;
+    try {
+      const res = await apiJson<{ output: string }>("/api/json/convert", {
+        input: jsonInput,
+        from: convertFrom,
+        to: convertTo,
+        indent: Number(indentSize) || 2,
+      });
+      jsonOutput = res.output;
+      if (convertFrom === "json") {
+        try { parsedJson = JSON.parse(jsonInput); } catch { parsedJson = null; }
+      }
+    } catch (e) {
+      backendError = (e as Error).message;
+    } finally {
+      isProcessing = false;
+    }
+  }
+
+  async function runSchema() {
+    backendError = "";
+    schemaResult = null;
+    jsonOutput = "";
+    try {
+      if (schemaMode === "generate") {
+        const res = await apiJson<{ schema: string }>("/api/json/schema", {
+          json: jsonInput,
+          mode: "generate",
+        });
+        jsonOutput = res.schema ?? "";
+      } else {
+        const res = await apiJson<{ valid: boolean; errors: { path: string; message: string }[] }>(
+          "/api/json/schema",
+          { json: jsonInput, mode: "validate", schema: schemaInput },
+        );
+        schemaResult = { valid: res.valid, errors: res.errors ?? [] };
+      }
+    } catch (e) {
+      backendError = (e as Error).message;
+    } finally {
+      isProcessing = false;
+    }
+  }
+
+  async function runQuery(parsed: unknown) {
+    backendError = "";
+    const indent = Number(indentSize) || 2;
+    jsonOutput = JSON.stringify(parsed, null, indent);
+    if (!jsonPath.trim()) {
+      jsonPathResult = "";
+      isProcessing = false;
+      return;
+    }
+    try {
+      const res = await apiJson<{ result: string }>("/api/json/query", {
+        json: jsonInput,
+        engine: queryEngine,
+        expr: jsonPath,
+      });
+      jsonPathResult = res.result;
+    } catch (e) {
+      backendError = (e as Error).message;
+      jsonPathResult = "";
+    } finally {
+      isProcessing = false;
+    }
+  }
+
+  function runDiff() {
+    backendError = "";
+    const norm = (s: string) => {
+      if (!s.trim()) return "";
+      try { return JSON.stringify(JSON.parse(s), null, Number(indentSize) || 2); }
+      catch { return s; }
+    };
+    diffResult = diffLines(norm(jsonInput), norm(jsonInputB));
+  }
+
+  function downloadOutput() {
+    const text = activeMode === "struct" ? structOutput : jsonOutput;
+    if (!text) return;
+    const ext =
+      activeMode === "struct"
+        ? structLanguages.find((l) => l.id === structLanguage)?.ext || "txt"
+        : activeMode === "convert"
+          ? convertTo
+          : "json";
+    downloadBlob(new Blob([text], { type: "text/plain;charset=utf-8" }), `output.${ext}`);
   }
 
   async function copyToClipboard(text: string, type: string) {
@@ -1149,6 +1276,7 @@
     jsonInput = ""; jsonOutput = ""; structOutput = ""; errorInfo = null;
     jsonStats = null; searchQuery = ""; searchMatches = []; activeSearchIndex = -1; jsonPath = "";
     jsonPathResult = ""; parsedJson = null; collapsedPaths = new Set();
+    jsonInputB = ""; schemaInput = ""; schemaResult = null; diffResult = null; backendError = "";
   }
 
   function loadExample() {
@@ -1281,18 +1409,12 @@
   });
 
   $effect(() => {
-    if (activeMode !== 'query' || parsedJson === null) {
-      jsonPathResult = "";
-      return;
+    // query 模式：表达式 / 引擎变化时重新查询（jsonInput 变化已由主 effect 处理）
+    jsonPath;
+    queryEngine;
+    if (activeMode === "query") {
+      untrack(() => scheduleProcessJson(250));
     }
-
-    if (!jsonPath) {
-      jsonPathResult = "";
-      return;
-    }
-
-    const queryResult = queryJsonPath(parsedJson, jsonPath);
-    jsonPathResult = queryResult === undefined ? "undefined" : JSON.stringify(queryResult, null, Number(indentSize) || 2);
   });
 
   $effect(() => {
@@ -1382,6 +1504,32 @@
         </select>
       </div>
     {/if}
+    {#if activeMode === 'convert'}
+      <div class="option-group">
+        <label for="json-convert-from">从:</label>
+        <select id="json-convert-from" bind:value={convertFrom} onchange={processJson}>
+          {#each dataFormats as f}<option value={f.id}>{f.name}</option>{/each}
+        </select>
+      </div>
+      <div class="option-group">
+        <label for="json-convert-to">到:</label>
+        <select id="json-convert-to" bind:value={convertTo} onchange={processJson}>
+          {#each dataFormats as f}<option value={f.id}>{f.name}</option>{/each}
+        </select>
+      </div>
+    {/if}
+    {#if activeMode === 'schema'}
+      <div class="view-toggle">
+        <button class="view-btn" class:active={schemaMode === 'generate'} onclick={() => { schemaMode = 'generate'; processJson(); }}>生成 Schema</button>
+        <button class="view-btn" class:active={schemaMode === 'validate'} onclick={() => { schemaMode = 'validate'; processJson(); }}>校验数据</button>
+      </div>
+    {/if}
+    {#if activeMode === 'query'}
+      <div class="view-toggle">
+        <button class="view-btn" class:active={queryEngine === 'jsonpath'} onclick={() => queryEngine = 'jsonpath'}>JSONPath</button>
+        <button class="view-btn" class:active={queryEngine === 'jq'} onclick={() => queryEngine = 'jq'}>jq</button>
+      </div>
+    {/if}
     <label class="checkbox-option">
       <input type="checkbox" bind:checked={sortKeys} onchange={processJson} />
       <span>排序键名</span>
@@ -1404,11 +1552,17 @@
     {/if}
   </div>
 
-  <!-- JSONPath查询 -->
+  <!-- 查询表达式 -->
   {#if activeMode === 'query'}
     <div class="jsonpath-bar">
-      <label for={jsonPathInputId}>JSONPath:</label>
-      <input id={jsonPathInputId} type="text" placeholder="$.data.items[0]" bind:value={jsonPath} />
+      <label for={jsonPathInputId}>{queryEngine === 'jq' ? 'jq' : 'JSONPath'}:</label>
+      <input
+        id={jsonPathInputId}
+        type="text"
+        placeholder={queryEngine === 'jq' ? '.data.items | map(.id) | add' : '$.data.items[*].id'}
+        bind:value={jsonPath}
+        oninput={() => scheduleProcessJson(250)}
+      />
     </div>
   {/if}
 
@@ -1459,32 +1613,71 @@
         <!-- 分隔条 -->
         <div class="resizer" role="separator" aria-orientation="vertical"></div>
 
-        <!-- 输出面板 -->
+        <!-- 输出面板 / 第二输入 -->
         <div class="editor-panel output-panel">
-          <div class="editor-header">
-            <span class="editor-title">
-              {activeMode === 'struct' ? `${structLanguages.find(l => l.id === structLanguage)?.name || ''} 输出` : 'JSON 输出'}
-            </span>
-            <div class="editor-actions">
-              <span class="editor-info">{(activeMode === 'struct' ? structOutput : jsonOutput).length.toLocaleString()} 字符</span>
-              {#if (activeMode === 'struct' ? structOutput : jsonOutput)}
-                <button class="copy-btn" onclick={() => copyToClipboard(activeMode === 'struct' ? structOutput : jsonOutput, 'output')}>
-                  {copied === 'output' ? '✓ 已复制' : '📋 复制'}
-                </button>
-              {/if}
+          {#if rightPanelRole === 'inputB'}
+            <div class="editor-header">
+              <span class="editor-title">对比 B</span>
+              <span class="editor-info">{jsonInputB.length.toLocaleString()} 字符 · {jsonInputB.split('\n').length} 行</span>
             </div>
-          </div>
-          <div class="editor-body output-body">
-        <textarea 
-              value={activeMode === 'struct' ? structOutput : jsonOutput}
-              placeholder={isProcessing ? '处理中...' : '格式化结果将显示在这里...'}
-              class="code-textarea output-textarea"
-              class:struct-output={activeMode === 'struct'}
-              class:success-output={activeMode === 'validate' && jsonOutput.includes('✓')}
-          readonly
-              spellcheck="false"
-        ></textarea>
-          </div>
+            <div class="editor-body">
+              <textarea
+                bind:value={jsonInputB}
+                placeholder="在此粘贴用于对比的第二份内容（JSON 会自动规范化后对比）"
+                class="code-textarea input-textarea"
+                spellcheck="false"
+                oninput={runDiff}
+              ></textarea>
+            </div>
+          {:else if rightPanelRole === 'schemaInput'}
+            <div class="editor-header">
+              <span class="editor-title">JSON Schema</span>
+              <span class="editor-info">{schemaInput.length.toLocaleString()} 字符</span>
+            </div>
+            <div class="editor-body">
+              <textarea
+                bind:value={schemaInput}
+                placeholder={'粘贴 JSON Schema，例如 {"type":"object","required":["name"]}'}
+                class="code-textarea input-textarea"
+                spellcheck="false"
+                oninput={() => scheduleProcessJson(300)}
+              ></textarea>
+            </div>
+          {:else}
+            <div class="editor-header">
+              <span class="editor-title">
+                {activeMode === 'struct'
+                  ? `${structLanguages.find(l => l.id === structLanguage)?.name || ''} 输出`
+                  : activeMode === 'convert'
+                    ? `${convertTo.toUpperCase()} 输出`
+                    : activeMode === 'schema'
+                      ? 'Schema 输出'
+                      : 'JSON 输出'}
+              </span>
+              <div class="editor-actions">
+                <span class="editor-info">{outputContent.length.toLocaleString()} 字符</span>
+                {#if outputContent}
+                  <button class="copy-btn" onclick={() => copyToClipboard(outputContent, 'output')}>
+                    {copied === 'output' ? '✓ 已复制' : '📋 复制'}
+                  </button>
+                  {#if activeMode === 'struct' || activeMode === 'convert' || (activeMode === 'schema' && schemaMode === 'generate')}
+                    <button class="copy-btn" onclick={downloadOutput}>⬇ 下载</button>
+                  {/if}
+                {/if}
+              </div>
+            </div>
+            <div class="editor-body output-body">
+              <textarea
+                value={outputContent}
+                placeholder={isProcessing ? '处理中...' : '结果将显示在这里...'}
+                class="code-textarea output-textarea"
+                class:struct-output={activeMode === 'struct'}
+                class:success-output={activeMode === 'validate' && jsonOutput.includes('✓')}
+                readonly
+                spellcheck="false"
+              ></textarea>
+            </div>
+          {/if}
         </div>
       </div>
     {:else if viewMode === 'tree' && parsedJson}
@@ -1590,7 +1783,53 @@
     </div>
   {/if}
 
-  <!-- JSONPath结果 -->
+  <!-- 后端处理错误（convert / schema / query） -->
+  {#if backendError}
+    <div class="backend-error">⚠️ {backendError}</div>
+  {/if}
+
+  <!-- Diff 结果 -->
+  {#if activeMode === 'diff' && diffResult}
+    <div class="diff-result">
+      <div class="diff-summary">
+        <span class="diff-stat add">+{diffResult.added}</span>
+        <span class="diff-stat del">-{diffResult.removed}</span>
+        <span class="diff-stat chg">~{diffResult.changed}</span>
+        <span class="diff-hint">{diffResult.added + diffResult.removed + diffResult.changed === 0 ? '两侧内容一致' : '左为 A，右为 B'}</span>
+      </div>
+      <div class="diff-rows">
+        {#each diffResult.rows as row}
+          <div class="diff-row {row.type}">
+            <span class="diff-ln">{row.leftNo ?? ''}</span>
+            <span class="diff-cell left">{row.left}</span>
+            <span class="diff-ln">{row.rightNo ?? ''}</span>
+            <span class="diff-cell right">{row.right}</span>
+          </div>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
+  <!-- Schema 校验结果 -->
+  {#if activeMode === 'schema' && schemaMode === 'validate' && schemaResult}
+    <div class="schema-result">
+      {#if schemaResult.valid}
+        <div class="schema-ok">✓ 数据符合 Schema</div>
+      {:else}
+        <div class="schema-fail">✕ 共 {schemaResult.errors.length} 处不符合：</div>
+        <div class="schema-errors">
+          {#each schemaResult.errors as err}
+            <div class="schema-err-item">
+              <code class="schema-err-path">{err.path}</code>
+              <span class="schema-err-msg">{err.message}</span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- 查询结果 -->
   {#if activeMode === 'query' && jsonPathResult}
     <div class="jsonpath-result">
       <span class="result-label">查询结果:</span>
@@ -2383,8 +2622,10 @@
     border-radius: 4px;
     font-size: 0.8rem;
     color: var(--accent-green);
-    max-height: 80px;
+    max-height: 240px;
     overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 
   .copy-btn-small {
@@ -2397,6 +2638,122 @@
   .copy-btn-small:hover {
     border-color: var(--primary) !important;
     transform: none !important;
+  }
+
+  /* 后端错误提示 */
+  .backend-error {
+    padding: 0.6rem 0.8rem;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid #ef4444;
+    border-radius: var(--radius-sm);
+    color: #fca5a5;
+    font-size: 0.85rem;
+    word-break: break-word;
+  }
+
+  /* Diff 结果 */
+  .diff-result {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+
+  .diff-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+  }
+
+  .diff-stat {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+  }
+  .diff-stat.add { color: var(--accent-green); }
+  .diff-stat.del { color: #f87171; }
+  .diff-stat.chg { color: #fbbf24; }
+  .diff-hint { color: var(--text-muted); margin-left: auto; }
+
+  .diff-rows {
+    max-height: 420px;
+    overflow: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    line-height: 1.5;
+  }
+
+  .diff-row {
+    display: grid;
+    grid-template-columns: 3rem 1fr 3rem 1fr;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .diff-ln {
+    text-align: right;
+    padding: 0 0.5rem;
+    color: var(--text-muted);
+    background: var(--bg-card);
+    user-select: none;
+  }
+
+  .diff-cell {
+    padding: 0 0.5rem;
+  }
+
+  .diff-row.insert .diff-cell.right,
+  .diff-row.replace .diff-cell.right {
+    background: rgba(16, 185, 129, 0.15);
+  }
+  .diff-row.delete .diff-cell.left,
+  .diff-row.replace .diff-cell.left {
+    background: rgba(248, 113, 113, 0.15);
+  }
+  .diff-row.delete .diff-cell.right,
+  .diff-row.insert .diff-cell.left {
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  /* Schema 校验结果 */
+  .schema-result {
+    padding: 0.6rem 0.8rem;
+    background: var(--bg-dark);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+  }
+  .schema-ok { color: var(--accent-green); font-weight: 600; }
+  .schema-fail { color: #f87171; font-weight: 600; margin-bottom: 0.5rem; }
+
+  .schema-errors {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    max-height: 240px;
+    overflow-y: auto;
+  }
+
+  .schema-err-item {
+    display: flex;
+    gap: 0.6rem;
+    align-items: baseline;
+  }
+
+  .schema-err-path {
+    color: var(--accent);
+    background: var(--bg-card);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    white-space: nowrap;
+    font-size: 0.78rem;
+  }
+
+  .schema-err-msg {
+    color: var(--text-secondary);
+    word-break: break-word;
   }
 
   /* 历史记录 */

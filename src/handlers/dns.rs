@@ -1,9 +1,9 @@
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
 use axum::Json;
 use hickory_resolver::proto::rr::RecordType;
 use hickory_resolver::TokioResolver;
 use serde::{Deserialize, Serialize};
+
+use super::error::AppError;
 
 #[derive(Deserialize)]
 pub struct ResolveRequest {
@@ -18,6 +18,23 @@ pub struct DnsResult {
 }
 
 pub async fn resolve(Json(req): Json<ResolveRequest>) -> Result<Json<Vec<DnsResult>>, AppError> {
+    let domain = req.domain.trim();
+    if domain.is_empty() || domain.len() > 253 {
+        return Err(AppError::bad_request("无效的域名"));
+    }
+    if !domain
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+    {
+        return Err(AppError::bad_request("域名包含非法字符"));
+    }
+    if req.types.is_empty() {
+        return Err(AppError::bad_request("请至少选择一种记录类型"));
+    }
+    if req.types.len() > 16 {
+        return Err(AppError::bad_request("记录类型过多"));
+    }
+
     let resolver = TokioResolver::builder_tokio()
         .map_err(|e| anyhow::anyhow!("读取系统 DNS 配置失败: {e}"))?
         .build()
@@ -34,36 +51,17 @@ pub async fn resolve(Json(req): Json<ResolveRequest>) -> Result<Json<Vec<DnsResu
             "NS" => RecordType::NS,
             _ => continue,
         };
-        match resolver.lookup(req.domain.clone(), rt).await {
-            Ok(lookup) => {
-                let records: Vec<String> = lookup
-                    .answers()
-                    .iter()
-                    .map(|r| r.data.to_string())
-                    .collect();
-                results.push(DnsResult { record_type: t, records });
-            }
-            Err(e) => {
-                results.push(DnsResult {
-                    record_type: t,
-                    records: vec![format!("查询失败: {e}")],
-                });
-            }
-        }
+        let lookup = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            resolver.lookup(domain.to_string(), rt),
+        )
+        .await;
+        let records = match lookup {
+            Ok(Ok(lookup)) => lookup.answers().iter().map(|r| r.data.to_string()).collect(),
+            Ok(Err(e)) => vec![format!("查询失败: {e}")],
+            Err(_) => vec!["查询超时".to_string()],
+        };
+        results.push(DnsResult { record_type: t, records });
     }
     Ok(Json(results))
-}
-
-pub struct AppError(anyhow::Error);
-
-impl<E: Into<anyhow::Error>> From<E> for AppError {
-    fn from(e: E) -> Self {
-        Self(e.into())
-    }
-}
-
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        (StatusCode::INTERNAL_SERVER_ERROR, self.0.to_string()).into_response()
-    }
 }

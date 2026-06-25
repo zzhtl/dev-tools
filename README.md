@@ -20,13 +20,16 @@ A local web application packaged as a **single executable binary**. It opens in 
 
 | Category | Tool | Description |
 |------|------|------|
-| Data Processing | JSON Tools | Format / minify / validate / tree folding / error hints / convert to Go struct |
+| Data Processing | JSON Tools | Format / minify / validate / tree view / diff / JSON Schema (validate & generate) / JSONPath & jq query / convert to YAML·CSV·XML·TOML / struct for Go·Java·Rust·TS·C++·C# |
 | Data Processing | HTML Tools | Format / minify / preview |
 | Data Processing | Regular Expressions | Test / validate / highlight matches |
+| Data Processing | Text Diff | Side-by-side line-level diff of two texts |
+| Data Processing | Markdown | Live preview, export HTML / MD |
 | Encoding | Base64 | Text / image ↔ Base64 |
 | Encoding | URL Encode/Decode | URL encode / decode |
 | Encoding | Hash | MD5 / SHA family |
 | Encoding | Encryption | Common symmetric / asymmetric encryption and decryption |
+| Encoding | JWT | Decode header/payload, inspect claims, verify HS256/384/512 |
 | Network | DNS Lookup | A / AAAA / MX / CNAME / TXT / NS |
 | Generator | UUID | Batch UUID generation |
 | Generator | QR Code | Generate QR codes from text |
@@ -92,10 +95,10 @@ dev-tools/
 │   ├── cli.rs          # clap argument definitions
 │   ├── assets.rs       # rust-embed static asset service
 │   └── handlers/       # Backend API handlers
-│       ├── json.rs     # POST /api/json/to-go
+│       ├── error.rs    # Shared AppError (carries HTTP status)
+│       ├── json.rs     # POST /api/json/{convert,schema,query}
 │       ├── dns.rs      # POST /api/dns/resolve
-│       └── image.rs    # GET  /api/image/formats
-│                       # POST /api/image/convert
+│       └── image.rs    # POST /api/image/convert
 ├── web/                # Svelte 5 frontend
 │   └── src/tools/*     # Individual tool modules
 ├── build.rs            # Cargo build script: runs bun build and embeds assets
@@ -109,9 +112,10 @@ All backend endpoints are prefixed with `/api`:
 | Method | Path | Purpose |
 |------|------|------|
 | GET  | `/api/healthz`         | Health check |
-| POST | `/api/json/to-go`      | Convert JSON to Go struct |
+| POST | `/api/json/convert`    | Convert between JSON / YAML / TOML / XML / CSV |
+| POST | `/api/json/schema`     | Validate against / generate JSON Schema |
+| POST | `/api/json/query`      | Query via JSONPath or jq |
 | POST | `/api/dns/resolve`     | Resolve DNS records |
-| GET  | `/api/image/formats`   | List supported image formats |
 | POST | `/api/image/convert`   | Convert image formats (multipart) |
 
 ## Download
@@ -146,13 +150,16 @@ Latest builds are available on [GitHub Releases](https://github.com/zzhtl/dev-to
 
 | 分类 | 工具 | 说明 |
 |------|------|------|
-| 数据处理 | JSON 工具 | 格式化 / 压缩 / 校验 / 树形折叠 / 错误提示 / 转 Go struct |
+| 数据处理 | JSON 工具 | 格式化 / 压缩 / 校验 / 树形 / 对比 / JSON Schema（校验与生成）/ JSONPath 与 jq 查询 / 转 YAML·CSV·XML·TOML / 转 Go·Java·Rust·TS·C++·C# 结构体 |
 | 数据处理 | HTML 工具 | 格式化 / 压缩 / 预览 |
 | 数据处理 | 正则表达式 | 测试 / 验证 / 匹配高亮 |
+| 数据处理 | 文本对比 | 两段文本并排行级差异 |
+| 数据处理 | Markdown | 实时预览，导出 HTML / MD |
 | 编解码 | Base64 | 文本 / 图片 ↔ Base64 |
 | 编解码 | URL 编解码 | URL encode / decode |
 | 编解码 | 哈希 | MD5 / SHA 系列 |
 | 编解码 | 加解密 | 常见对称 / 非对称加解密 |
+| 编解码 | JWT | 解码 header/payload、查看声明、验签 HS256/384/512 |
 | 网络 | DNS 解析 | A / AAAA / MX / CNAME / TXT / NS |
 | 生成器 | UUID | 批量生成 UUID |
 | 生成器 | 二维码 | 文本生成二维码 |
@@ -218,10 +225,10 @@ dev-tools/
 │   ├── cli.rs          # clap 参数定义
 │   ├── assets.rs       # rust-embed 静态资源服务
 │   └── handlers/       # 后端 API 处理器
-│       ├── json.rs     # POST /api/json/to-go
+│       ├── error.rs    # 共享 AppError（携带 HTTP 状态码）
+│       ├── json.rs     # POST /api/json/{convert,schema,query}
 │       ├── dns.rs      # POST /api/dns/resolve
-│       └── image.rs    # GET  /api/image/formats
-│                       # POST /api/image/convert
+│       └── image.rs    # POST /api/image/convert
 ├── web/                # Svelte 5 前端
 │   └── src/tools/*     # 各工具独立模块
 ├── build.rs            # Cargo 构建脚本：驱动 bun 构建并嵌入产物
@@ -235,9 +242,10 @@ dev-tools/
 | 方法 | 路径 | 用途 |
 |------|------|------|
 | GET  | `/api/healthz`         | 健康检查 |
-| POST | `/api/json/to-go`      | JSON 转 Go struct |
+| POST | `/api/json/convert`    | JSON / YAML / TOML / XML / CSV 互转 |
+| POST | `/api/json/schema`     | JSON Schema 校验 / 生成 |
+| POST | `/api/json/query`      | JSONPath 或 jq 查询 |
 | POST | `/api/dns/resolve`     | DNS 记录解析 |
-| GET  | `/api/image/formats`   | 查询支持的图片格式 |
 | POST | `/api/image/convert`   | 图片格式转换（multipart） |
 
 ## 下载

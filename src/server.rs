@@ -9,9 +9,10 @@ use crate::{assets, handlers};
 pub fn build_router() -> Router {
     let api = Router::new()
         .route("/healthz", get(|| async { "ok" }))
-        .route("/json/to-go", post(handlers::json::to_go))
+        .route("/json/convert", post(handlers::json::convert))
+        .route("/json/schema", post(handlers::json::schema))
+        .route("/json/query", post(handlers::json::query))
         .route("/dns/resolve", post(handlers::dns::resolve))
-        .route("/image/formats", get(handlers::image::formats))
         .route("/image/convert", post(handlers::image::convert));
 
     Router::new()

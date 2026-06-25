@@ -17,11 +17,13 @@
     "vite": "^6.0.7"
   },
   "dependencies": {
-    "qrcode": "^1.5.4",
+    "cron-parser": "^5.0.3",
     "crypto-js": "^4.2.0",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
-    "cron-parser": "^5.0.3",
-    "jsencrypt": "^3.3.2"
+    "dompurify": "^3.4.11",
+    "jsencrypt": "^3.3.2",
+    "marked": "^18.0.5",
+    "qrcode": "^1.5.4"
   }
 }
