@@ -1,173 +1,43 @@
-# Dev Tools
+# Dev Tools · 开发工具箱
 
-[English](#dev-tools) | [简体中文](#简体中文)
+简体中文 | [English](./README.en.md)
 
-A local web application packaged as a **single executable binary**. It opens in your browser automatically after startup, bundles common developer utilities, requires no extra runtime dependencies, makes no external network calls, and processes everything locally on your machine.
+一个用 Rust 打包成 **单文件可执行程序** 的本地开发者工具箱：启动后自动在浏览器打开，内置 18 款常用开发工具，无需安装额外依赖，开箱即用。除 DNS 解析需向系统 DNS 服务器发起查询外，其余处理全部在本机完成，不上传数据、无遥测。
 
-- Backend: [Axum](https://github.com/tokio-rs/axum) + Tokio, with static assets embedded directly into the binary via [`rust-embed`](https://crates.io/crates/rust-embed)
-- Frontend: [Svelte 5](https://svelte.dev/) + [Vite 6](https://vite.dev/) + TypeScript
-- Build: `cargo build` triggers `build.rs`, which builds the frontend with `bun` and embeds the generated assets
-
-## Features
-
-- Single-file distribution: run everything from one executable with frontend assets already embedded
-- Local web UI: opens automatically in a browser, with the interface rebuilt in Svelte 5
-- Localhost by default: listens on `127.0.0.1`; can be switched to `0.0.0.0` for LAN access
-- Automatic port fallback: if the default port is occupied, it retries the next 20 ports
-- Rust-backed heavy lifting: compute-intensive tasks such as DNS resolution, image conversion, and JSON to Go struct generation are handled by the backend
-
-## Built-in Tools
-
-| Category | Tool | Description |
-|------|------|------|
-| Data Processing | JSON Tools | Format / minify / validate / tree view / diff / JSON Schema (validate & generate) / JSONPath & jq query / convert to YAML·CSV·XML·TOML / struct for Go·Java·Rust·TS·C++·C# |
-| Data Processing | HTML Tools | Format / minify / preview |
-| Data Processing | Regular Expressions | Test / validate / highlight matches |
-| Data Processing | Text Diff | Side-by-side line-level diff of two texts |
-| Data Processing | Markdown | Live preview, export HTML / MD |
-| Encoding | Base64 | Text / image ↔ Base64 |
-| Encoding | URL Encode/Decode | URL encode / decode |
-| Encoding | Hash | MD5 / SHA family |
-| Encoding | Encryption | Common symmetric / asymmetric encryption and decryption |
-| Encoding | JWT | Decode header/payload, inspect claims, verify HS256/384/512 |
-| Network | DNS Lookup | A / AAAA / MX / CNAME / TXT / NS |
-| Generator | UUID | Batch UUID generation |
-| Generator | QR Code | Generate QR codes from text |
-| Time | Time Converter | Timestamp/date conversion and timezone handling |
-| Time | Cron Expression | Parse cron expressions and predict next execution time |
-| Image | Image Conversion | Convert common formats, with large-image compressed preview and lossless original conversion |
-| Image | Color Picker | Pick colors / HEX / RGB / HSL |
-| Reference | Linux Commands | Quick lookup for common commands |
-
-## Quick Start
-
-### Run the Executable
-
-```bash
-# Listen on 127.0.0.1:8927 by default and open the browser automatically
-./dev-tools
-
-# Common options
-./dev-tools --port 9000            # Set port (auto-fallback if occupied)
-./dev-tools --host 0.0.0.0         # Allow access from the local network
-./dev-tools --no-browser           # Do not open a browser on startup
-./dev-tools --help                 # Show all options
-```
-
-### Build from Source
-
-Prerequisites:
-
-- [Rust](https://www.rust-lang.org/tools/install) (stable, edition 2021)
-- [Bun](https://bun.sh/): used to build the frontend. If it is not installed, `cargo build` will skip the frontend build and emit a placeholder page instead.
-
-```bash
-# Clone and build the release binary
-git clone https://github.com/zzhtl/dev-tools.git
-cd dev-tools
-cargo build --release
-
-# Output binary
-./target/release/dev-tools
-```
-
-### Frontend Development
-
-You can work on the frontend independently with the Vite dev server inside `web/`:
-
-```bash
-cd web
-bun install
-bun run dev       # Vite dev server
-bun run build     # Build to ../dist for rust-embed
-bun run check     # Type checking with svelte-check
-```
-
-> The Cargo build script `build.rs` watches `web/src`, `web/public`, and related directories. In normal cases, `cargo build` is enough to rebuild the frontend and embed the assets automatically.
-
-## Project Structure
-
-```text
-dev-tools/
-├── src/                # Rust backend
-│   ├── main.rs         # Entry point: CLI parsing, port binding, axum startup
-│   ├── server.rs       # Route assembly (/api/* and static asset fallback)
-│   ├── cli.rs          # clap argument definitions
-│   ├── assets.rs       # rust-embed static asset service
-│   └── handlers/       # Backend API handlers
-│       ├── error.rs    # Shared AppError (carries HTTP status)
-│       ├── json.rs     # POST /api/json/{convert,schema,query}
-│       ├── dns.rs      # POST /api/dns/resolve
-│       └── image.rs    # POST /api/image/convert
-├── web/                # Svelte 5 frontend
-│   └── src/tools/*     # Individual tool modules
-├── build.rs            # Cargo build script: runs bun build and embeds assets
-└── Cargo.toml
-```
-
-## Backend API
-
-All backend endpoints are prefixed with `/api`:
-
-| Method | Path | Purpose |
-|------|------|------|
-| GET  | `/api/healthz`         | Health check |
-| POST | `/api/json/convert`    | Convert between JSON / YAML / TOML / XML / CSV |
-| POST | `/api/json/schema`     | Validate against / generate JSON Schema |
-| POST | `/api/json/query`      | Query via JSONPath or jq |
-| POST | `/api/dns/resolve`     | Resolve DNS records |
-| POST | `/api/image/convert`   | Convert image formats (multipart) |
-
-## Download
-
-Latest builds are available on [GitHub Releases](https://github.com/zzhtl/dev-tools/releases).
-
-## License
-
-[Apache-2.0](./LICENSE)
-
----
-
-## 简体中文
-
-[English](#dev-tools) | [简体中文](#简体中文)
-
-一个用 Rust 打包成 **单文件可执行程序** 的本地 Web 应用：启动后自动在浏览器打开，内置常用开发工具，无需安装额外依赖，无外网调用，所有处理均在本机完成。
-
-- 后端：[Axum](https://github.com/tokio-rs/axum) + Tokio，静态资源通过 [`rust-embed`](https://crates.io/crates/rust-embed) 直接嵌入二进制
-- 前端：[Svelte 5](https://svelte.dev/) + [Vite 6](https://vite.dev/) + TypeScript
-- 构建：`cargo build` 触发 `build.rs`，自动用 `bun` 构建前端产物并嵌入
+- **后端**：[Axum](https://github.com/tokio-rs/axum) 0.8 + Tokio，静态资源通过 [`rust-embed`](https://crates.io/crates/rust-embed) 直接嵌入二进制
+- **前端**：[Svelte 5](https://svelte.dev/) + [Vite 6](https://vite.dev/) + TypeScript
+- **构建**：`cargo build` 触发 `build.rs`，自动用 [`bun`](https://bun.sh/) 构建前端产物并嵌入
 
 ## 特性
 
-- 单文件分发：一个可执行文件即可运行，前端资源已打包进二进制
-- 本地 Web 形态：启动后自动打开浏览器，界面用 Svelte 5 重写
-- 默认仅本机监听：`127.0.0.1`，可切换 `0.0.0.0` 供同网段使用
-- 热切换端口：默认端口被占用时自动向后顺延 20 个端口
-- 按需调用 Rust 能力：DNS 解析、图片格式转换、JSON → Go struct 等计算密集工作交给后端
+- **单文件分发**：一个可执行文件即可运行，前端资源已打包进二进制，无运行时依赖
+- **本地优先**：默认仅监听 `127.0.0.1`，可切换 `0.0.0.0` 供同网段访问；数据不出本机
+- **自动打开浏览器**：启动后自动唤起默认浏览器，可用 `--no-browser` 关闭
+- **端口自动顺延**：默认端口被占用时，自动向后尝试最多 20 个端口
+- **Rust 承担重活**：DNS 解析、图片格式转换、JSON 互转 / Schema / 查询等计算交给后端处理
 
 ## 内置工具
 
 | 分类 | 工具 | 说明 |
 |------|------|------|
-| 数据处理 | JSON 工具 | 格式化 / 压缩 / 校验 / 树形 / 对比 / JSON Schema（校验与生成）/ JSONPath 与 jq 查询 / 转 YAML·CSV·XML·TOML / 转 Go·Java·Rust·TS·C++·C# 结构体 |
-| 数据处理 | HTML 工具 | 格式化 / 压缩 / 预览 |
-| 数据处理 | 正则表达式 | 测试 / 验证 / 匹配高亮 |
-| 数据处理 | 文本对比 | 两段文本并排行级差异 |
-| 数据处理 | Markdown | 实时预览，导出 HTML / MD |
-| 编解码 | Base64 | 文本 / 图片 ↔ Base64 |
-| 编解码 | URL 编解码 | URL encode / decode |
-| 编解码 | 哈希 | MD5 / SHA 系列 |
-| 编解码 | 加解密 | 常见对称 / 非对称加解密 |
-| 编解码 | JWT | 解码 header/payload、查看声明、验签 HS256/384/512 |
-| 网络 | DNS 解析 | A / AAAA / MX / CNAME / TXT / NS |
-| 生成器 | UUID | 批量生成 UUID |
-| 生成器 | 二维码 | 文本生成二维码 |
-| 时间 | 时间转换 | 时间戳与日期格式互转、时区处理 |
-| 时间 | Cron 表达式 | 解析并预测下一次执行时间 |
-| 图像 | 图片转换 | 常见格式互转，支持大图压缩预览与原图无损转换 |
-| 图像 | 颜色选择器 | 取色 / HEX / RGB / HSL |
-| 参考 | Linux 命令 | 常用命令速查 |
+| 数据处理 | JSON 工具 | 格式化 / 压缩 / 转义 / 校验 / 树形视图 / 关键字定位；对比两段 JSON；JSON Schema 校验与生成；JSONPath 与 jq 查询；与 YAML·TOML·XML·CSV 互转；生成 Go·Java·Rust·TypeScript·C++·C# 结构体；保留 20 条历史记录 |
+| 数据处理 | 正则表达式 | 实时测试、匹配高亮、分组与替换，内置常用正则预设 |
+| 数据处理 | HTML 工具 | 格式化 / 压缩 / 实时预览 |
+| 数据处理 | 文本对比 | 两段文本并排行级差异对比 |
+| 数据处理 | Markdown | 实时预览（GFM）、代码高亮，导出 HTML / 复制 |
+| 时间日期 | 时间转换 | 时间戳 ↔ 日期互转（秒 / 毫秒）、时区处理 |
+| 时间日期 | Cron 表达式 | 字段拆解、常用预设、执行时间预测；支持**自然语言智能生成**（如「每天早上 8 点 30 分执行」→ `30 8 * * *`）与时区切换 |
+| 编码加密 | 加密解密 | AES / DES / 3DES 对称加密，RSA 非对称加密（支持密钥对生成），Base64 编解码 |
+| 编码加密 | JWT 解析 | 解码 header / payload，查看声明，使用 HMAC 密钥验签 HS256 / 384 / 512（RS / ES 仅解码） |
+| 编码加密 | Base64 | 文本 ↔ Base64、图片 ↔ Base64 |
+| 编码加密 | Hash 计算 | MD5 / SHA-1 / SHA-256 / SHA-384 / SHA-512 / SHA3 / RIPEMD |
+| 编码加密 | URL 编解码 | URL encode / decode |
+| 生成工具 | 二维码 | 文本生成二维码 |
+| 生成工具 | UUID | 批量生成 UUID（v1 / v4） |
+| 生成工具 | 颜色选择器 | 取色与 HEX / RGB(A) / HSL(A) 互转 |
+| 网络工具 | DNS 解析 | 查询 A / AAAA / MX / CNAME / TXT / NS 记录（调用系统 DNS，单条 5 秒超时） |
+| 系统工具 | Linux 命令 | 内置 15 个分类、127 条常用命令速查 |
+| 系统工具 | 图片转换 | PNG / JPEG / GIF / WEBP / BMP / ICO 互转，支持缩放与 JPEG 质量调节（单文件上限 100MB） |
 
 ## 快速开始
 
@@ -178,7 +48,7 @@ Latest builds are available on [GitHub Releases](https://github.com/zzhtl/dev-to
 ./dev-tools
 
 # 常用参数
-./dev-tools --port 9000            # 指定端口（占用时自动顺延）
+./dev-tools --port 9000            # 指定端口（被占用时自动顺延，最多 +20）
 ./dev-tools --host 0.0.0.0         # 允许同网段访问
 ./dev-tools --no-browser           # 启动后不自动打开浏览器
 ./dev-tools --help                 # 查看全部参数
@@ -208,28 +78,29 @@ cargo build --release
 ```bash
 cd web
 bun install
-bun run dev       # Vite dev server
+bun run dev       # 启动 Vite 开发服务器
 bun run build     # 构建到 ../dist（供 rust-embed 嵌入）
 bun run check     # svelte-check 类型检查
 ```
 
-> Cargo 构建脚本 `build.rs` 会监听 `web/src`、`web/public` 等目录的变更；正常情况下直接 `cargo build` 即可自动完成前端构建与资源嵌入。
+> Cargo 构建脚本 `build.rs` 会监听 `web/src`、`web/public` 等目录的变更；正常情况下直接 `cargo build` 即可自动完成前端构建与资源嵌入。修改前端后需重新构建以重新嵌入产物。
 
 ## 项目结构
 
 ```text
 dev-tools/
 ├── src/                # Rust 后端
-│   ├── main.rs         # 入口：CLI 解析、端口绑定、启动 axum
+│   ├── main.rs         # 入口：CLI 解析、端口绑定（自动顺延）、启动 axum
 │   ├── server.rs       # 路由组装（/api/* 与静态资源回退）
-│   ├── cli.rs          # clap 参数定义
+│   ├── cli.rs          # clap 参数定义（--port / --host / --no-browser）
 │   ├── assets.rs       # rust-embed 静态资源服务
 │   └── handlers/       # 后端 API 处理器
 │       ├── error.rs    # 共享 AppError（携带 HTTP 状态码）
-│       ├── json.rs     # POST /api/json/{convert,schema,query}
-│       ├── dns.rs      # POST /api/dns/resolve
-│       └── image.rs    # POST /api/image/convert
+│       ├── json.rs     # /api/json/{convert,schema,query}
+│       ├── dns.rs      # /api/dns/resolve
+│       └── image.rs    # /api/image/convert
 ├── web/                # Svelte 5 前端
+│   ├── src/App.svelte  # 侧边栏分类与工具路由
 │   └── src/tools/*     # 各工具独立模块
 ├── build.rs            # Cargo 构建脚本：驱动 bun 构建并嵌入产物
 └── Cargo.toml
@@ -237,16 +108,30 @@ dev-tools/
 
 ## 后端 API
 
-所有接口前缀为 `/api`，需要调用的工具会通过这些接口委托给 Rust 处理：
+所有接口前缀为 `/api`，前端在需要时将计算委托给 Rust 处理：
 
-| 方法 | 路径 | 用途 |
-|------|------|------|
-| GET  | `/api/healthz`         | 健康检查 |
-| POST | `/api/json/convert`    | JSON / YAML / TOML / XML / CSV 互转 |
-| POST | `/api/json/schema`     | JSON Schema 校验 / 生成 |
-| POST | `/api/json/query`      | JSONPath 或 jq 查询 |
-| POST | `/api/dns/resolve`     | DNS 记录解析 |
-| POST | `/api/image/convert`   | 图片格式转换（multipart） |
+| 方法 | 路径 | 用途 | 请求体 |
+|------|------|------|------|
+| GET  | `/api/healthz`       | 健康检查 | — |
+| POST | `/api/json/convert`  | JSON / YAML / TOML / XML / CSV 互转 | `{ input, from, to, indent? }` |
+| POST | `/api/json/schema`   | JSON Schema 生成或校验 | `{ json, mode: "generate"\|"validate", schema? }` |
+| POST | `/api/json/query`    | JSONPath 或 jq 查询 | `{ json, engine: "jsonpath"\|"jq", expr }` |
+| POST | `/api/dns/resolve`   | DNS 记录解析 | `{ domain, types: ["A","MX",...] }` |
+| POST | `/api/image/convert` | 图片格式转换（含缩放 / 质量） | `multipart: file, format, options?` |
+
+## 技术栈
+
+| 层 | 选型 |
+|----|------|
+| 后端框架 | Axum 0.8 + Tokio |
+| 资源嵌入 | rust-embed（前端产物打包进二进制） |
+| 中间件 | tower-http（gzip 压缩 / CORS / 请求追踪） |
+| DNS | hickory-resolver |
+| 图片 | image |
+| JSON 生态 | serde_json / serde_yaml / toml / quick-xml / csv / jsonschema / serde_json_path / jaq |
+| 前端 | Svelte 5 + Vite 6 + TypeScript |
+| 前端库 | marked（Markdown）、highlight.js、qrcode、@noble/hashes、@noble/ciphers |
+| Release 优化 | LTO（thin）、codegen-units=1、strip |
 
 ## 下载
 
