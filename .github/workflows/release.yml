@@ -1,0 +1,155 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的 tag（例如 v0.3.0）"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # 前端只构建一次，五个 target 复用同一份产物：
+  # 保证所有平台二进制内嵌的前端字节完全一致，也避免各 target 的 build script
+  # 并发写同一个 dist/（vite 的 emptyOutDir 会先清空目录）。
+  web:
+    name: 构建前端
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: 安装依赖
+        working-directory: web
+        run: bun install --frozen-lockfile
+      - name: 构建
+        working-directory: web
+        run: bun run build
+      - name: 断言不是占位页
+        run: |
+          set -eu
+          test -f dist/index.html
+          if grep -q 'dev-tools-placeholder' dist/index.html; then
+            echo "::error::dist/index.html 是占位页，前端构建失败，拒绝继续发布"
+            exit 1
+          fi
+          echo "前端产物校验通过：$(du -sh dist | cut -f1)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: dist
+          retention-days: 1
+
+  build:
+    name: ${{ matrix.target }}
+    needs: web
+    runs-on: ${{ matrix.os }}
+    env:
+      DEV_TOOLS_SKIP_WEB_BUILD: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            archive: tar.gz
+          # 用原生 ARM runner 而不是 cross：hickory-proto 依赖的 ring 需要 C 工具链，
+          # 交叉编译到 aarch64-musl 容易踩坑，原生编译最省事。
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-13
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 musl 工具链
+        if: endsWith(matrix.target, '-musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: 下载前端产物
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: dist
+
+      - name: 构建
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: 打包（tar.gz）
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          set -eu
+          name="dev-tools-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir -p "dist-pkg/$name"
+          cp "target/${{ matrix.target }}/release/dev-tools" "dist-pkg/$name/"
+          cp README.md README.en.md LICENSE "dist-pkg/$name/"
+          tar -C dist-pkg -czf "$name.tar.gz" "$name"
+          echo "打包完成：$name.tar.gz"
+
+      - name: 打包（zip）
+        if: matrix.archive == 'zip'
+        shell: bash
+        run: |
+          set -eu
+          name="dev-tools-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir -p "dist-pkg/$name"
+          cp "target/${{ matrix.target }}/release/dev-tools.exe" "dist-pkg/$name/"
+          cp README.md README.en.md LICENSE "dist-pkg/$name/"
+          cd dist-pkg && 7z a "../$name.zip" "$name"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-${{ matrix.target }}
+          path: |
+            *.tar.gz
+            *.zip
+          retention-days: 3
+
+  release:
+    name: 发布
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 汇总产物
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pkg-*
+          path: artifacts
+          merge-multiple: true
+      - name: 生成 SHA256SUMS
+        working-directory: artifacts
+        run: |
+          set -eu
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+      - name: 创建 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: artifacts/*

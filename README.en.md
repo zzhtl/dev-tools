@@ -2,140 +2,184 @@
 
 [简体中文](./README.md) | English
 
-A local developer toolbox packaged as a **single executable binary** with Rust. It opens in your browser automatically after startup and bundles 18 common developer utilities — no extra runtime dependencies, ready to use out of the box. Everything is processed locally on your machine (the only exception is DNS lookup, which by nature queries your system's DNS servers); no data is uploaded and there is no telemetry.
+A local developer toolbox shipped as a **single Rust executable**. Run it and your browser opens with 25 everyday developer tools — no extra runtime, no install steps. Apart from DNS lookups and TCP port probes, everything runs on your machine: no uploads, no telemetry.
 
-- **Backend**: [Axum](https://github.com/tokio-rs/axum) 0.8 + Tokio, with static assets embedded directly into the binary via [`rust-embed`](https://crates.io/crates/rust-embed)
-- **Frontend**: [Svelte 5](https://svelte.dev/) + [Vite 6](https://vite.dev/) + TypeScript
-- **Build**: `cargo build` triggers `build.rs`, which builds the frontend with [`bun`](https://bun.sh/) and embeds the generated assets
+- **Backend**: [Axum](https://github.com/tokio-rs/axum) 0.8 + Tokio, static assets embedded via [`rust-embed`](https://crates.io/crates/rust-embed)
+- **Frontend**: [Svelte 5](https://svelte.dev/) (runes) + [Vite 6](https://vite.dev/) + TypeScript
+- **Build**: `cargo build` runs `build.rs`, which builds the frontend with [`bun`](https://bun.sh/) and embeds the output
 
 ## Features
 
-- **Single-file distribution**: run everything from one executable with frontend assets already embedded, zero runtime dependencies
-- **Local-first**: listens on `127.0.0.1` by default; switch to `0.0.0.0` for LAN access. Your data never leaves the machine
-- **Auto-open browser**: launches your default browser on startup; disable with `--no-browser`
-- **Automatic port fallback**: if the default port is occupied, it retries up to the next 20 ports
-- **Rust does the heavy lifting**: DNS resolution, image conversion, and JSON convert / schema / query are handled by the backend
+- **Single-file distribution** — one executable, frontend assets baked in, no runtime dependencies
+- **Fully offline** — the monospace font ships with the binary, so the UI is complete on air-gapped machines
+- **Local first** — binds `127.0.0.1` by default; switch to `0.0.0.0` for LAN access
+- **Command palette** — `Ctrl/⌘ K` fuzzy-searches every tool
+- **Light / dark themes** — can follow the system; your choice is remembered
+- **Shareable links** — every tool has its own URL (`#/json`), survives reloads
+- **Persistent state** — theme, favourites, recents and JSON history are stored locally
+- **Lazy loading** — tools are code-split; the first paint pulls only ~149KB
+- **Automatic port fallback** — tries up to 20 subsequent ports when the default is taken
+- **Rust does the heavy lifting** — DNS, image conversion, JSON conversion / schema / queries run on the backend
 
-## Built-in Tools
+## Keyboard shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl/⌘ K` | Open the command palette |
+| `Ctrl/⌘ /` | Show keyboard shortcuts |
+| `Ctrl/⌘ B` | Collapse / expand the sidebar |
+| `Ctrl/⌘ ⇧ L` | Cycle dark / light / system theme |
+| `Esc` | Close the current overlay |
+
+## Included tools
 
 | Category | Tool | Description |
-|------|------|------|
-| Data | JSON Tools | Format / minify / escape / validate / tree view / keyword locate; diff two JSON documents; JSON Schema validate & generate; JSONPath and jq query; convert to/from YAML·TOML·XML·CSV; generate structs for Go·Java·Rust·TypeScript·C++·C#; keeps 20 history entries |
-| Data | Regular Expressions | Live testing, match highlighting, groups & replace, with built-in common-pattern presets |
-| Data | HTML Tools | Format / minify / live preview |
-| Data | Text Diff | Side-by-side line-level diff of two texts |
-| Data | Markdown | Live preview (GFM), code highlighting, export HTML / copy |
-| Time | Time Converter | Timestamp ↔ date conversion (seconds / milliseconds), timezone handling |
-| Time | Cron Expression | Field breakdown, common presets, next-run prediction; supports **natural-language generation** (e.g. "run at 8:30 every morning" → `30 8 * * *`) and timezone switching |
-| Encoding | Crypto | AES / DES / 3DES symmetric encryption, RSA asymmetric encryption (with key-pair generation), Base64 |
-| Encoding | JWT | Decode header / payload, inspect claims, verify HS256 / 384 / 512 with an HMAC key (RS / ES decode-only) |
-| Encoding | Base64 | Text ↔ Base64, image ↔ Base64 |
-| Encoding | Hash | MD5 / SHA-1 / SHA-256 / SHA-384 / SHA-512 / SHA3 / RIPEMD |
-| Encoding | URL Encode/Decode | URL encode / decode |
-| Generator | QR Code | Generate QR codes from text |
-| Generator | UUID | Batch UUID generation (v1 / v4) |
-| Generator | Color Picker | Pick colors and convert between HEX / RGB(A) / HSL(A) |
-| Network | DNS Lookup | Resolve A / AAAA / MX / CNAME / TXT / NS records (uses the system resolver, 5s timeout per record) |
-| System | Linux Commands | Quick lookup across 15 categories and 127 common commands |
-| System | Image Conversion | Convert between PNG / JPEG / GIF / WEBP / BMP / ICO, with resize and JPEG quality control (100MB upload limit) |
+|----------|------|-------------|
+| Data | JSON | Format / minify / escape / validate / tree view / keyword jump; diff two documents; JSON Schema generation and validation; JSONPath and jq queries; convert to and from YAML·TOML·XML·CSV; generate Go·Java·Rust·TypeScript·C++·C# structs; 20 locally stored history entries |
+| Data | Regex | Live testing, match highlighting, capture groups and replacement, with a built-in pattern library and syntax reference |
+| Data | HTML | Format / minify / sandboxed preview (scripts disabled in the preview) |
+| Data | Text diff | Side-by-side line diff with a changes-only view |
+| Data | Markdown | Live GFM preview, export as HTML or Markdown |
+| Data | Text utilities | Dedupe, drop blanks, sort, shuffle, number lines, add prefix/suffix, case conversion including camel/snake/kebab, word counts |
+| Data | SQL formatter | Format and minify across 11 dialects, with keyword-case options |
+| Data | YAML / TOML | Validate, format, and convert between YAML, TOML and JSON |
+| Time | Timestamp | Convert timestamps ↔ dates (s / ms) and show local, UTC, ISO 8601 and relative time |
+| Time | Cron | Field breakdown, presets, next-run prediction, timezone switching, plus natural-language generation |
+| Encoding | Encrypt / decrypt | AES / DES / 3DES symmetric ciphers, RSA with 2048-bit key-pair generation |
+| Encoding | JWT | Decode header / payload, inspect time claims and expiry, verify HS256 / 384 / 512 with an HMAC secret |
+| Encoding | Base64 | UTF-8-safe text ↔ Base64 with a URL-safe variant; any file or image → data URL |
+| Encoding | Hash | MD5 / SHA-1 / SHA-256 / 384 / 512 / SHA3-256 / RIPEMD-160; pick the algorithms you need; large files hashed in chunks with progress |
+| Encoding | URL | `encodeURIComponent` and `encodeURI` modes with a reference table |
+| Encoding | Escaping | Unicode / HTML entities / JSON strings / SQL literals / shell arguments, both directions |
+| Encoding | Radix | Convert between base 2 / 8 / 10 / 16, bitwise AND·OR·XOR·shift·NOT, 8–64 bit widths, signed and unsigned |
+| Generators | QR code | Generate from text with adjustable size, error correction and colours; download as PNG |
+| Generators | UUID | Bulk generate UUID v4 / v7 / v1 backed by `crypto` |
+| Generators | Password | Strong random passwords with selectable character sets, ambiguous-character exclusion, entropy and strength estimates |
+| Generators | Colour picker | Pick colours, convert HEX / RGB(A) / HSL(A), colour schemes, WCAG contrast checks, gradient CSS |
+| Network | DNS | Query A / AAAA / CNAME / MX / TXT / NS / SOA / SRV / CAA / PTR records with TTLs; optional upstream resolver |
+| Network | IP / CIDR | IPv4 and IPv6 subnet maths: network address, mask, usable host range, address scope |
+| System | Linux commands | 127 common commands across 15 categories, with examples and tips |
+| System | Image conversion | PNG / JPEG / GIF / WEBP / BMP / ICO, batch mode, resizing and JPEG quality (100MB per file) |
 
-## Quick Start
+## Getting started
 
-### Run the Executable
+### One-line install (recommended)
+
+**macOS / Linux**
 
 ```bash
-# Listen on 127.0.0.1:8927 by default and open the browser automatically
-./dev-tools
-
-# Common options
-./dev-tools --port 9000            # Set port (auto-fallback up to +20 if occupied)
-./dev-tools --host 0.0.0.0         # Allow access from the local network
-./dev-tools --no-browser           # Do not open a browser on startup
-./dev-tools --help                 # Show all options
+curl -fsSL https://raw.githubusercontent.com/zzhtl/dev-tools/main/install.sh | sh
 ```
 
-### Build from Source
+**Windows (PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/zzhtl/dev-tools/main/install.ps1 | iex
+```
+
+The installer detects your OS and architecture, downloads the matching artifact, **verifies it against `SHA256SUMS`**, and installs to `~/.local/bin` (`%LOCALAPPDATA%\Programs\dev-tools` on Windows) — no sudo required.
+
+```bash
+# install to a specific directory
+curl -fsSL .../install.sh | sh -s -- --dir /usr/local/bin
+
+# install a specific version
+curl -fsSL .../install.sh | sh -s -- --version v0.3.0
+```
+
+### Manual download
+
+Artifacts are published on [GitHub Releases](https://github.com/zzhtl/dev-tools/releases):
+
+| Platform | Artifact |
+|----------|----------|
+| Linux x86_64 | `dev-tools-<version>-x86_64-unknown-linux-musl.tar.gz` |
+| Linux ARM64 | `dev-tools-<version>-aarch64-unknown-linux-musl.tar.gz` |
+| macOS Apple Silicon | `dev-tools-<version>-aarch64-apple-darwin.tar.gz` |
+| macOS Intel | `dev-tools-<version>-x86_64-apple-darwin.tar.gz` |
+| Windows x86_64 | `dev-tools-<version>-x86_64-pc-windows-msvc.zip` |
+
+Linux builds are statically linked against musl, so they do not depend on the host glibc. Every release ships a `SHA256SUMS` file — verify before running.
+
+### Running
+
+```bash
+# listens on 127.0.0.1:8927 and opens your browser
+dev-tools
+
+# common flags
+dev-tools --port 9000            # pick a port (falls forward up to +20 if taken)
+dev-tools --host 0.0.0.0         # allow LAN access
+dev-tools --no-browser           # do not open a browser on startup
+dev-tools --help                 # all options
+```
+
+> Reaching the app over a LAN IP puts the browser in a non-secure context, where some APIs (clipboard, `crypto.randomUUID`) are unavailable. The tools ship with fallbacks, so they keep working.
+
+### Building from source
 
 Prerequisites:
 
 - [Rust](https://www.rust-lang.org/tools/install) (stable, edition 2021)
-- [Bun](https://bun.sh/): used to build the frontend. If it is not installed, `cargo build` will skip the frontend build and emit a placeholder page instead.
+- [Bun](https://bun.sh/) to build the frontend. **`cargo build` fails outright when bun is missing**, rather than silently producing a binary with no frontend.
 
 ```bash
-# Clone and build the release binary
 git clone https://github.com/zzhtl/dev-tools.git
 cd dev-tools
 cargo build --release
 
-# Output binary
 ./target/release/dev-tools
 ```
 
-### Frontend Development
+If the frontend was already built elsewhere (for example built once in CI and reused across platforms), skip the frontend step in `build.rs`:
 
-You can work on the frontend independently with the Vite dev server inside `web/`:
+```bash
+cd web && bun install && bun run build && cd ..
+DEV_TOOLS_SKIP_WEB_BUILD=1 cargo build --release
+```
+
+That mode asserts `dist/index.html` exists and is not the placeholder page; otherwise the build fails.
+
+### Frontend development
 
 ```bash
 cd web
 bun install
-bun run dev       # Start the Vite dev server
-bun run build     # Build to ../dist (for rust-embed)
-bun run check     # Type checking with svelte-check
-```
-
-> The Cargo build script `build.rs` watches `web/src`, `web/public`, and related directories. In normal cases, `cargo build` is enough to rebuild the frontend and embed the assets. After changing the frontend, rebuild to re-embed the assets.
-
-## Project Structure
-
-```text
-dev-tools/
-├── src/                # Rust backend
-│   ├── main.rs         # Entry point: CLI parsing, port binding (auto-fallback), axum startup
-│   ├── server.rs       # Route assembly (/api/* and static asset fallback)
-│   ├── cli.rs          # clap argument definitions (--port / --host / --no-browser)
-│   ├── assets.rs       # rust-embed static asset service
-│   └── handlers/       # Backend API handlers
-│       ├── error.rs    # Shared AppError (carries HTTP status)
-│       ├── json.rs     # /api/json/{convert,schema,query}
-│       ├── dns.rs      # /api/dns/resolve
-│       └── image.rs    # /api/image/convert
-├── web/                # Svelte 5 frontend
-│   ├── src/App.svelte  # Sidebar categories and tool routing
-│   └── src/tools/*     # Individual tool modules
-├── build.rs            # Cargo build script: runs bun build and embeds assets
-└── Cargo.toml
+bun run dev       # Vite dev server (proxies /api to 127.0.0.1:8927)
+bun run build     # build into ../dist for rust-embed
+bun run check     # svelte-check
 ```
 
 ## Backend API
 
-All backend endpoints are prefixed with `/api`; the frontend delegates computation to Rust when needed:
+Every endpoint is prefixed with `/api`; the frontend delegates the heavy work to Rust:
 
-| Method | Path | Purpose | Request Body |
-|------|------|------|------|
+| Method | Path | Purpose | Body |
+|--------|------|---------|------|
 | GET  | `/api/healthz`       | Health check | — |
-| POST | `/api/json/convert`  | Convert between JSON / YAML / TOML / XML / CSV | `{ input, from, to, indent? }` |
-| POST | `/api/json/schema`   | Generate or validate JSON Schema | `{ json, mode: "generate"\|"validate", schema? }` |
-| POST | `/api/json/query`    | Query via JSONPath or jq | `{ json, engine: "jsonpath"\|"jq", expr }` |
-| POST | `/api/dns/resolve`   | Resolve DNS records | `{ domain, types: ["A","MX",...] }` |
-| POST | `/api/image/convert` | Convert image formats (with resize / quality) | `multipart: file, format, options?` |
+| POST | `/api/json/convert`  | JSON / YAML / TOML / XML / CSV conversion | `{ input, from, to, indent? }` |
+| POST | `/api/json/schema`   | JSON Schema generation or validation | `{ json, mode: "generate"\|"validate", schema? }` |
+| POST | `/api/json/query`    | JSONPath or jq queries (3s timeout, output count and size caps) | `{ json, engine: "jsonpath"\|"jq", expr }` |
+| POST | `/api/dns/resolve`   | DNS lookups (returns TTLs) | `{ domain, types: ["A","MX",...], server? }` |
+| POST | `/api/net/port`      | Single host/port TCP reachability probe (3s timeout) | `{ host, port }` |
+| POST | `/api/image/convert` | Image conversion with resize and quality | `multipart: file, format, options?` |
 
-## Tech Stack
+CORS only allows loopback origins, so exposing the app with `--host 0.0.0.0` does not let arbitrary websites drive the API. JSON diffing is implemented entirely in the frontend and has no endpoint.
+
+## Tech stack
 
 | Layer | Choice |
-|----|------|
-| Backend framework | Axum 0.8 + Tokio |
-| Asset embedding | rust-embed (frontend bundled into the binary) |
-| Middleware | tower-http (gzip compression / CORS / request tracing) |
+|-------|--------|
+| Web framework | Axum 0.8 + Tokio |
+| Asset embedding | rust-embed |
+| Middleware | tower-http (gzip, CORS, tracing) |
 | DNS | hickory-resolver |
-| Image | image |
+| Images | image |
 | JSON ecosystem | serde_json / serde_yaml / toml / quick-xml / csv / jsonschema / serde_json_path / jaq |
-| Frontend | Svelte 5 + Vite 6 + TypeScript |
-| Frontend libs | marked (Markdown), highlight.js, qrcode, @noble/hashes, @noble/ciphers |
-| Release optimization | LTO (thin), codegen-units=1, strip |
-
-## Download
-
-Latest builds are available on [GitHub Releases](https://github.com/zzhtl/dev-tools/releases).
+| Frontend | Svelte 5 (runes) + Vite 6 + TypeScript |
+| Frontend libraries | marked + DOMPurify, qrcode, crypto-js, jsencrypt, cron-parser, date-fns, sql-formatter |
+| Fonts | JetBrains Mono (OFL-1.1, bundled); system stack for CJK |
+| Release profile | thin LTO, codegen-units=1, strip |
 
 ## License
 
