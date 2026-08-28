@@ -71,8 +71,11 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
             archive: tar.gz
+          # GitHub 已退役 macos-13（Intel）runner，作业会永远排队；
+          # 改为在 Apple Silicon runner 上交叉编译 —— Xcode 自带的 clang 同时支持
+          # 两种架构，ring 的 C 代码可以正常编译。
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-latest
             archive: tar.gz
           - target: x86_64-pc-windows-msvc
             os: windows-latest
