@@ -4,13 +4,26 @@
     <meta charset="utf-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
     <title>开发工具箱 - Dev Tools</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <!--
+      主题引导：首屏绘制前就写好 data-theme，避免暗色用户看到一帧白屏。
+      与 lib/theme.svelte.ts 的存储键保持一致（devtools:theme）。
+    -->
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem("devtools:theme");
+          var mode = raw ? JSON.parse(raw) : "dark";
+          var dark =
+            mode === "dark" ||
+            (mode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.dataset.theme = dark ? "dark" : "light";
+        } catch (e) {
+          document.documentElement.dataset.theme = "dark";
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

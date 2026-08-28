@@ -652,12 +652,10 @@ dependencies = [
 
 [[package]]
 name = "dev-tools"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "axum",
- "base64",
- "bytes",
  "clap",
  "csv",
  "hickory-resolver",
@@ -674,14 +672,11 @@ dependencies = [
  "serde_json",
  "serde_json_path",
  "serde_yaml",
- "thiserror",
  "tokio",
  "toml",
- "tower",
  "tower-http",
  "tracing",
  "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]

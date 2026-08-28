@@ -14,6 +14,8 @@ const MAX_UPLOAD_BYTES: usize = 100 * 1024 * 1024;
 
 #[derive(Deserialize, Debug, Clone, Copy)]
 #[serde(rename_all = "UPPERCASE")]
+// 变体名刻意与图片格式的通用写法保持一致（PNG/JPEG/…），不按 Rust 驼峰改写
+#[allow(clippy::upper_case_acronyms)]
 pub enum OutputFormat {
     PNG,
     JPEG,
@@ -112,8 +114,7 @@ pub async fn convert(mut mp: Multipart) -> Result<Response, AppError> {
         return Ok(bad_request("缺少或无效的 format 字段"));
     };
 
-    let img = image::load_from_memory(&bytes)
-        .map_err(|e| anyhow::anyhow!("解析图片失败: {e}"))?;
+    let img = image::load_from_memory(&bytes).map_err(|e| anyhow::anyhow!("解析图片失败: {e}"))?;
 
     let img = if let Some(resize) = options.resize.as_ref() {
         do_resize(&img, resize)
@@ -133,10 +134,14 @@ pub async fn convert(mut mp: Multipart) -> Result<Response, AppError> {
     let (w, h) = img.dimensions();
 
     // out_name 已净化为 ASCII，header 构造不会失败；仍用安全回退避免任何 panic。
-    let safe = |s: String| HeaderValue::from_str(&s).unwrap_or_else(|_| HeaderValue::from_static("image"));
+    let safe =
+        |s: String| HeaderValue::from_str(&s).unwrap_or_else(|_| HeaderValue::from_static("image"));
 
     let mut headers = HeaderMap::new();
-    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(format.mime()));
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static(format.mime()),
+    );
     headers.insert(
         header::CONTENT_DISPOSITION,
         safe(format!("attachment; filename=\"{out_name}\"")),
@@ -191,7 +196,11 @@ fn do_resize(img: &DynamicImage, opts: &ResizeOptions) -> DynamicImage {
     }
 }
 
-fn encode(img: &DynamicImage, format: OutputFormat, quality: Option<u8>) -> anyhow::Result<Vec<u8>> {
+fn encode(
+    img: &DynamicImage,
+    format: OutputFormat,
+    quality: Option<u8>,
+) -> anyhow::Result<Vec<u8>> {
     let mut buf = Cursor::new(Vec::<u8>::new());
     match format {
         OutputFormat::JPEG => {

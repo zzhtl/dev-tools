@@ -1,0 +1,26 @@
+/*
+ * 自托管等宽字体，取代原先 index.html 里的 Google Fonts 外链 —— 单文件二进制
+ * 必须能在断网/内网环境下正常渲染。
+ *
+ * 只打包 400/500 两个字重（各约 95KB），其余字重由浏览器合成。
+ * 中文刻意不打包 webfont：Noto Sans SC 单字重就有数 MB，会把二进制撑爆，
+ * 正文改用系统 CJK 字体栈（见 tokens.css 的 --font-sans）。
+ *
+ * JetBrains Mono 采用 SIL Open Font License 1.1，许可证全文见 public/fonts/OFL.txt。
+ */
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMono-Medium.woff2") format("woff2");
+  font-weight: 500 700;
+  font-style: normal;
+  font-display: swap;
+}

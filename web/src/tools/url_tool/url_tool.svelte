@@ -1,483 +1,269 @@
 <script lang="ts">
+  import Button from "../../lib/ui/Button.svelte";
+  import CopyButton from "../../lib/ui/CopyButton.svelte";
+  import Panel from "../../lib/ui/Panel.svelte";
+  import SplitPane from "../../lib/ui/SplitPane.svelte";
+  import Tabs from "../../lib/ui/Tabs.svelte";
+  import TextArea from "../../lib/ui/TextArea.svelte";
+  import { formatCount } from "../../lib/format";
+
   let inputText = $state("");
-  let outputText = $state("");
   let mode = $state<"encode" | "decode">("encode");
-  let encodeType = $state<"standard" | "component">("component");
-  let errorMessage = $state("");
-  let copied = $state(false);
+  let encodeType = $state<"component" | "standard">("component");
 
-  function processUrl() {
-    errorMessage = "";
-    
-    if (!inputText.trim()) {
-      outputText = "";
-      return;
-    }
+  const EXAMPLE = "https://example.com/search?q=中文测试&page=1&filter=特殊字符!@#$%";
 
+  const COMMON_ENCODINGS = [
+    { char: "空格", code: "%20 或 +" },
+    { char: "!", code: "%21" },
+    { char: "#", code: "%23" },
+    { char: "$", code: "%24" },
+    { char: "&", code: "%26" },
+    { char: "=", code: "%3D" },
+    { char: "?", code: "%3F" },
+    { char: "@", code: "%40" },
+  ];
+
+  interface Outcome {
+    text: string;
+    error: string;
+  }
+
+  const outcome = $derived.by((): Outcome => {
+    if (!inputText.trim()) return { text: "", error: "" };
     try {
       if (mode === "encode") {
-        if (encodeType === "standard") {
-          outputText = encodeURI(inputText);
-        } else {
-          outputText = encodeURIComponent(inputText);
-        }
-      } else {
-        try {
-          outputText = decodeURIComponent(inputText);
-        } catch {
-          // 尝试 decodeURI
-          outputText = decodeURI(inputText);
-        }
+        return {
+          text: encodeType === "standard" ? encodeURI(inputText) : encodeURIComponent(inputText),
+          error: "",
+        };
       }
-    } catch (err: any) {
-      errorMessage = `处理失败: ${err.message}`;
-      outputText = "";
-    }
-  }
-
-  async function copyOutput() {
-    if (!outputText) return;
-    
-    try {
-      await navigator.clipboard.writeText(outputText);
-      copied = true;
-      setTimeout(() => {
-        copied = false;
-      }, 1500);
+      try {
+        return { text: decodeURIComponent(inputText), error: "" };
+      } catch {
+        // 含未转义 % 时 decodeURIComponent 会抛，退回 decodeURI 再试
+        return { text: decodeURI(inputText), error: "" };
+      }
     } catch (err) {
-      console.error('复制失败:', err);
-    }
-  }
-
-  function swapInputOutput() {
-    const temp = inputText;
-    inputText = outputText;
-    outputText = temp;
-    mode = mode === "encode" ? "decode" : "encode";
-  }
-
-  function clearAll() {
-    inputText = "";
-    outputText = "";
-    errorMessage = "";
-  }
-
-  function loadExample() {
-    inputText = "https://example.com/search?q=中文测试&page=1&filter=特殊字符!@#$%";
-    processUrl();
-  }
-
-  // 响应输入变化
-  $effect(() => {
-    if (inputText !== undefined) {
-      processUrl();
+      return { text: "", error: `处理失败：${err instanceof Error ? err.message : String(err)}` };
     }
   });
+
+  function swap() {
+    const next = outcome.text;
+    if (!next) return;
+    inputText = next;
+    mode = mode === "encode" ? "decode" : "encode";
+  }
 </script>
 
-<div class="url-tool">
-  <div class="controls">
-    <div class="mode-selector">
-      <button 
-        class:active={mode === "encode"}
-        onclick={() => { mode = "encode"; processUrl(); }}
-      >
-        编码 (Encode)
-      </button>
-      <button 
-        class:active={mode === "decode"}
-        onclick={() => { mode = "decode"; processUrl(); }}
-      >
-        解码 (Decode)
-      </button>
-    </div>
+<div class="tool">
+  <div class="toolbar">
+    <Tabs
+      bind:value={mode}
+      tabs={[
+        { value: "encode", label: "编码" },
+        { value: "decode", label: "解码" },
+      ]}
+      ariaLabel="编解码模式"
+    />
 
     {#if mode === "encode"}
-      <div class="encode-type">
-        <label class="radio-label">
-          <input type="radio" bind:group={encodeType} value="component" onchange={processUrl} />
-          <span>encodeURIComponent</span>
-          <span class="hint">(推荐，编码所有特殊字符)</span>
-        </label>
-        <label class="radio-label">
-          <input type="radio" bind:group={encodeType} value="standard" onchange={processUrl} />
-          <span>encodeURI</span>
-          <span class="hint">(保留URL结构字符)</span>
-        </label>
-      </div>
+      <Tabs
+        bind:value={encodeType}
+        size="sm"
+        tabs={[
+          { value: "component", label: "encodeURIComponent" },
+          { value: "standard", label: "encodeURI" },
+        ]}
+        ariaLabel="编码方式"
+      />
     {/if}
 
-    <div class="action-buttons">
-      <button class="secondary-btn" onclick={loadExample}>加载示例</button>
-      <button class="secondary-btn" onclick={clearAll}>清空</button>
-    </div>
+    <div class="spacer"></div>
+
+    <Button size="sm" onclick={swap} title="把结果放回输入并切换模式">⇄ 交换</Button>
+    <Button size="sm" onclick={() => (inputText = EXAMPLE)}>示例</Button>
+    <Button size="sm" variant="ghost" onclick={() => (inputText = "")}>清空</Button>
   </div>
 
-  <div class="converter-area">
-    <div class="input-panel">
-      <div class="panel-header">
-        <span>输入 ({mode === "encode" ? "原文" : "编码后"})</span>
-        <span class="char-count">{inputText.length} 字符</span>
-      </div>
-      <textarea 
-        bind:value={inputText}
-        placeholder={mode === "encode" ? "输入要编码的URL或文本..." : "输入要解码的URL..."}
-        rows="8"
-      ></textarea>
-    </div>
+  <SplitPane>
+    {#snippet left()}
+      <Panel title={mode === "encode" ? "原文" : "编码后"} grow>
+        {#snippet actions()}
+          <span class="count">{formatCount(inputText.length)} 字符</span>
+        {/snippet}
+        <TextArea
+          bind:value={inputText}
+          fill
+          placeholder={mode === "encode" ? "输入要编码的 URL 或文本…" : "输入要解码的 URL…"}
+          ariaLabel="输入"
+        />
+      </Panel>
+    {/snippet}
 
-    <button class="swap-btn" onclick={swapInputOutput} title="交换输入输出">
-      ⇄
-    </button>
+    {#snippet right()}
+      <Panel title={mode === "encode" ? "编码后" : "解码后"} grow>
+        {#snippet actions()}
+          <span class="count">{formatCount(outcome.text.length)} 字符</span>
+          <CopyButton value={() => outcome.text} disabled={!outcome.text} />
+        {/snippet}
+        <TextArea
+          value={outcome.text}
+          fill
+          readonly
+          invalid={!!outcome.error}
+          placeholder="处理结果将显示在这里…"
+          ariaLabel="输出"
+        />
+      </Panel>
+    {/snippet}
+  </SplitPane>
 
-    <div class="output-panel">
-      <div class="panel-header">
-        <span>输出 ({mode === "encode" ? "编码后" : "解码后"})</span>
-        <div class="output-actions">
-          <span class="char-count">{outputText.length} 字符</span>
-          {#if outputText}
-            <button class="copy-inline-btn" onclick={copyOutput}>
-              {copied ? '✓ 已复制' : '复制'}
-            </button>
-          {/if}
-        </div>
-      </div>
-      <textarea 
-        bind:value={outputText}
-        placeholder="处理结果将显示在这里..."
-        rows="8"
-        readonly
-      ></textarea>
-    </div>
-  </div>
-
-  {#if errorMessage}
-    <div class="error-message">
-      ⚠️ {errorMessage}
-    </div>
+  {#if outcome.error}
+    <p class="error">{outcome.error}</p>
   {/if}
 
-  <div class="info-section">
-    <h3>URL 编码说明</h3>
-    <div class="info-grid">
-      <div class="info-card">
-        <h4>encodeURIComponent</h4>
-        <p>编码所有非字母数字字符，适合编码URL参数值。会编码 <code>= & ? /</code> 等字符。</p>
-        <div class="example">
-          <span>示例：</span>
-          <code>你好 → %E4%BD%A0%E5%A5%BD</code>
+  <details class="reference">
+    <summary>URL 编码说明</summary>
+    <div class="ref-body">
+      <div class="ref-cards">
+        <div class="ref-card">
+          <h3>encodeURIComponent</h3>
+          <p>编码所有非字母数字字符，适合编码单个参数值，会编码 <code>= &amp; ? /</code>。</p>
+          <code class="sample">你好 → %E4%BD%A0%E5%A5%BD</code>
+        </div>
+        <div class="ref-card">
+          <h3>encodeURI</h3>
+          <p>保留 URL 结构字符，适合编码完整 URL，不会编码 <code>: / ? # [ ] @</code>。</p>
+          <code class="sample">https://a.com/你好 → https://a.com/%E4%BD%A0%E5%A5%BD</code>
         </div>
       </div>
-      <div class="info-card">
-        <h4>encodeURI</h4>
-        <p>保留URL结构字符不编码，适合编码完整URL。不会编码 <code>: / ? # [ ] @</code> 等。</p>
-        <div class="example">
-          <span>示例：</span>
-          <code>https://a.com/你好 → https://a.com/%E4%BD%A0%E5%A5%BD</code>
-        </div>
-      </div>
+      <ul class="table">
+        {#each COMMON_ENCODINGS as item (item.char)}
+          <li><span>{item.char}</span><code>{item.code}</code></li>
+        {/each}
+      </ul>
     </div>
-
-    <div class="common-encodings">
-      <h4>常见编码对照</h4>
-      <div class="encoding-table">
-        <div class="encoding-row">
-          <span class="original">空格</span>
-          <span class="encoded">%20 或 +</span>
-        </div>
-        <div class="encoding-row">
-          <span class="original">!</span>
-          <span class="encoded">%21</span>
-        </div>
-        <div class="encoding-row">
-          <span class="original">#</span>
-          <span class="encoded">%23</span>
-        </div>
-        <div class="encoding-row">
-          <span class="original">$</span>
-          <span class="encoded">%24</span>
-        </div>
-        <div class="encoding-row">
-          <span class="original">&</span>
-          <span class="encoded">%26</span>
-        </div>
-        <div class="encoding-row">
-          <span class="original">=</span>
-          <span class="encoded">%3D</span>
-        </div>
-        <div class="encoding-row">
-          <span class="original">?</span>
-          <span class="encoded">%3F</span>
-        </div>
-        <div class="encoding-row">
-          <span class="original">@</span>
-          <span class="encoded">%40</span>
-        </div>
-      </div>
-    </div>
-  </div>
+  </details>
 </div>
 
 <style>
-  .url-tool {
+  .tool {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--sp-3);
+    flex: 1;
+    min-height: 0;
   }
 
-  .controls {
+  .toolbar {
     display: flex;
+    align-items: center;
     flex-wrap: wrap;
-    gap: 1.5rem;
-    align-items: center;
-    padding: 1rem;
-    background: var(--bg-dark);
+    gap: var(--sp-2);
+  }
+
+  .spacer {
+    flex: 1;
+  }
+
+  .count {
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+  }
+
+  .error {
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid var(--color-danger-border);
     border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
+    background: var(--color-danger-bg);
+    color: var(--color-danger);
+    font-size: var(--fs-sm);
   }
 
-  .mode-selector {
-    display: flex;
-    background: var(--bg-card);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
-    overflow: hidden;
+  .reference {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
   }
 
-  .mode-selector button {
-    padding: 0.65rem 1.25rem !important;
-    background: transparent !important;
-    border: none !important;
-    border-radius: 0 !important;
-    color: var(--text-secondary) !important;
-    font-weight: 500;
-  }
-
-  .mode-selector button.active {
-    background: var(--primary) !important;
-    color: white !important;
-  }
-
-  .mode-selector button:hover:not(.active) {
-    background: var(--bg-hover) !important;
-    box-shadow: none !important;
-    transform: none !important;
-  }
-
-  .encode-type {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .radio-label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
+  summary {
+    padding: var(--sp-2) var(--sp-4);
     cursor: pointer;
-    font-size: 0.9rem;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
+    color: var(--color-text-secondary);
   }
 
-  .radio-label input {
-    accent-color: var(--primary);
-    width: 16px;
-    height: 16px;
-  }
-
-  .radio-label .hint {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-  }
-
-  .action-buttons {
-    display: flex;
-    gap: 0.5rem;
-    margin-left: auto;
-  }
-
-  .secondary-btn {
-    padding: 0.5rem 1rem !important;
-    background: var(--bg-hover) !important;
-    border: 1px solid var(--border) !important;
-    font-size: 0.85rem !important;
-  }
-
-  .converter-area {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    gap: 1rem;
-    align-items: stretch;
-  }
-
-  .input-panel, .output-panel {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
+  .ref-body {
     display: flex;
     flex-direction: column;
+    gap: var(--sp-3);
+    padding: 0 var(--sp-4) var(--sp-4);
   }
 
-  .panel-header {
+  .ref-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--sp-3);
+  }
+
+  .ref-card {
+    padding: var(--sp-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+  }
+
+  .ref-card h3 {
+    font-size: var(--fs-sm);
+    font-family: var(--font-mono);
+    color: var(--color-primary);
+    margin-bottom: var(--sp-1);
+  }
+
+  .ref-card p {
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .sample {
+    display: block;
+    margin-top: var(--sp-2);
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+    word-break: break-all;
+  }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.95em;
+  }
+
+  .table {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: var(--sp-1) var(--sp-3);
+    list-style: none;
+  }
+
+  .table li {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    padding: 0.75rem 1rem;
-    background: var(--bg-dark);
-    border-bottom: 1px solid var(--border);
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-  }
-
-  .output-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .char-count {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-  }
-
-  .copy-inline-btn {
-    padding: 0.3rem 0.75rem !important;
-    font-size: 0.8rem !important;
-    background: var(--bg-hover) !important;
-    border: 1px solid var(--border) !important;
-  }
-
-  .input-panel textarea,
-  .output-panel textarea {
-    flex: 1;
-    border: none !important;
-    border-radius: 0 !important;
-    resize: none;
-    font-family: 'JetBrains Mono', monospace;
-    min-height: 200px;
-  }
-
-  .output-panel textarea {
-    background: var(--bg-dark) !important;
-    color: var(--accent);
-  }
-
-  .swap-btn {
-    align-self: center;
-    width: 44px !important;
-    height: 44px !important;
-    padding: 0 !important;
-    border-radius: 50% !important;
-    background: var(--bg-dark) !important;
-    border: 1px solid var(--border) !important;
-    font-size: 1.25rem;
-  }
-
-  .swap-btn:hover {
-    background: var(--bg-hover) !important;
-    border-color: var(--primary) !important;
-  }
-
-  .error-message {
-    padding: 0.75rem 1rem;
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    gap: var(--sp-2);
+    padding: var(--sp-1) var(--sp-2);
     border-radius: var(--radius-sm);
-    color: #f87171;
-    font-size: 0.9rem;
+    background: var(--color-surface-2);
+    font-size: var(--fs-xs);
   }
 
-  .info-section {
-    margin-top: 1rem;
+  .table span {
+    color: var(--color-text-secondary);
   }
 
-  .info-section h3 {
-    font-size: 1rem;
-    margin-bottom: 1rem;
-  }
-
-  .info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .info-card {
-    padding: 1rem;
-    background: var(--bg-dark);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-  }
-
-  .info-card h4 {
-    font-size: 0.9rem;
-    color: var(--accent);
-    margin-bottom: 0.5rem;
-  }
-
-  .info-card p {
-    font-size: 0.85rem;
-    line-height: 1.5;
-    margin-bottom: 0.75rem;
-  }
-
-  .info-card code {
-    font-size: 0.8rem;
-    background: var(--bg-card) !important;
-  }
-
-  .example {
-    font-size: 0.85rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid var(--border);
-  }
-
-  .example span {
-    color: var(--text-muted);
-    margin-right: 0.5rem;
-  }
-
-  .common-encodings h4 {
-    font-size: 0.9rem;
-    margin-bottom: 0.75rem;
-    color: var(--text-secondary);
-  }
-
-  .encoding-table {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    gap: 0.5rem;
-  }
-
-  .encoding-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    background: var(--bg-dark);
-    border-radius: var(--radius-sm);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.85rem;
-  }
-
-  .original {
-    color: var(--text-primary);
-    min-width: 30px;
-  }
-
-  .encoded {
-    color: var(--accent);
-  }
-
-  @media (max-width: 768px) {
-    .converter-area {
-      grid-template-columns: 1fr;
-    }
-
-    .swap-btn {
-      justify-self: center;
-      transform: rotate(90deg);
-    }
+  .table code {
+    color: var(--color-accent);
   }
 </style>
-

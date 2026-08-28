@@ -1,4 +1,7 @@
 <script lang="ts">
+    import CopyButton from "../../lib/ui/CopyButton.svelte";
+    import Button from "../../lib/ui/Button.svelte";
+    import Panel from "../../lib/ui/Panel.svelte";
     // 响应式状态
     let hexColor = $state("#4f46e5");
     let r = $state(79);
@@ -8,7 +11,6 @@
     let saturation = $state(75);
     let lightness = $state(59);
     let alpha = $state(100);
-    let copied = $state<string | null>(null);
     
     // 颜色历史
     let colorHistory = $state<string[]>([]);
@@ -190,16 +192,6 @@
     }
 
     // 复制到剪贴板
-    async function copyToClipboard(text: string, type: string) {
-        try {
-            await navigator.clipboard.writeText(text);
-            copied = type;
-            addToHistory(hexColor);
-            setTimeout(() => copied = null, 1500);
-        } catch (err) {
-            console.error("复制失败:", err);
-        }
-    }
 
     // 随机颜色
     function randomColor() {
@@ -279,800 +271,508 @@
     const contrastWithBlack = $derived(getContrastRatio({r, g, b}, {r: 0, g: 0, b: 0}));
 </script>
 
-<div class="color-tool">
-    <div class="main-section">
-        <!-- 颜色选择器 -->
-        <div class="picker-section">
-            <div class="color-preview-area">
-                <div class="color-preview" style="background-color: {hexColor}">
-                    <span class="preview-text" style="color: {getTextColor()}">{hexColor}</span>
-                </div>
-                <button class="random-btn" onclick={randomColor}>
-                    🎲 随机颜色
-                </button>
-            </div>
+<div class="tool">
+  <div class="top">
+    <Panel title="取色">
+      {#snippet actions()}
+        <Button size="sm" onclick={randomColor}>随机</Button>
+      {/snippet}
 
-            <div class="color-selector">
-                <div 
-                    class="color-area"
-                    style="background: linear-gradient(to top, #000, transparent), 
-                           linear-gradient(to right, #fff, hsl({hue}, 100%, 50%))"
-                    onclick={selectColor}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={(e) => e.key === 'Enter' && selectColor(e as unknown as MouseEvent)}
-                >
-                    <div 
-                        class="color-pointer"
-                        style="left: {saturation}%; top: {100 - lightness}%;"
-                    ></div>
-                </div>
-                
-                <div 
-                    class="hue-slider"
-                    style="background: {hueGradient}"
-                    onclick={selectHue}
-                    role="slider"
-                    tabindex="0"
-                    aria-valuenow={hue}
-                    onkeydown={(e) => e.key === 'Enter' && selectHue(e as unknown as MouseEvent)}
-                >
-                    <div 
-                        class="hue-thumb"
-                        style="left: {hue / 360 * 100}%"
-                    ></div>
-                </div>
+      <div class="preview" style="background-color: {hexColor}">
+        <span style="color: {getTextColor()}">{hexColor}</span>
+      </div>
 
-                <!-- 透明度滑块 -->
-                <div class="alpha-slider-container">
-                    <span class="slider-label">透明度: {alpha}%</span>
-                    <input 
-                        type="range"
-                        class="alpha-slider"
-                        min="0"
-                        max="100"
-                        bind:value={alpha}
-                    />
-                </div>
-            </div>
+      <!-- 取色区：这里的颜色由用户选择决定，是本工具的数据本身，不使用主题 token -->
+      <div
+        class="area"
+        style="background: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl({hue}, 100%, 50%))"
+        onclick={selectColor}
+        role="button"
+        tabindex="0"
+        aria-label="饱和度与明度取色区"
+        onkeydown={(e) => e.key === "Enter" && selectColor(e as unknown as MouseEvent)}
+      >
+        <div class="pointer" style="left: {saturation}%; top: {100 - lightness}%;"></div>
+      </div>
+
+      <div
+        class="hue"
+        style="background: {hueGradient}"
+        onclick={selectHue}
+        role="slider"
+        aria-label="色相"
+        aria-valuemin={0}
+        aria-valuemax={360}
+        aria-valuenow={hue}
+        tabindex="0"
+        onkeydown={(e) => e.key === "Enter" && selectHue(e as unknown as MouseEvent)}
+      >
+        <div class="thumb" style="left: {(hue / 360) * 100}%"></div>
+      </div>
+
+      <label class="alpha">
+        <span>透明度 {alpha}%</span>
+        <input type="range" min="0" max="100" bind:value={alpha} />
+      </label>
+    </Panel>
+
+    <Panel title="颜色值">
+      <div class="values">
+        <div class="row">
+          <span class="tag">HEX</span>
+          <input type="text" bind:value={hexColor} onchange={updateHex} aria-label="HEX" />
+          <CopyButton value={() => hexColor} icon title="复制 HEX" />
         </div>
 
-        <!-- 颜色值输入 -->
-        <div class="values-section">
-            <div class="value-group">
-                <label for="hex-input">HEX</label>
-                <div class="input-row">
-                    <input 
-                        id="hex-input"
-                        type="text" 
-                        bind:value={hexColor}
-                        onchange={updateHex}
-                    />
-                    <button 
-                        class="copy-btn"
-                        class:copied={copied === 'hex'}
-                        onclick={() => copyToClipboard(hexColor, 'hex')}
-                    >
-                        {copied === 'hex' ? '✓' : '📋'}
-                    </button>
-                </div>
-            </div>
-
-            <div class="value-group">
-                <div class="value-group-title">RGB</div>
-                <div class="rgb-inputs">
-                    <div class="rgb-input">
-                        <span>R</span>
-                        <input 
-                            type="number" 
-                            min="0" max="255" 
-                            bind:value={r}
-                            onchange={updateRgb}
-                        />
-                    </div>
-                    <div class="rgb-input">
-                        <span>G</span>
-                        <input 
-                            type="number" 
-                            min="0" max="255" 
-                            bind:value={g}
-                            onchange={updateRgb}
-                        />
-                    </div>
-                    <div class="rgb-input">
-                        <span>B</span>
-                        <input 
-                            type="number" 
-                            min="0" max="255" 
-                            bind:value={b}
-                            onchange={updateRgb}
-                        />
-                    </div>
-                    <button 
-                        class="copy-btn"
-                        class:copied={copied === 'rgb'}
-                        onclick={() => copyToClipboard(getRgbaString(), 'rgb')}
-                    >
-                        {copied === 'rgb' ? '✓' : '📋'}
-                    </button>
-                </div>
-            </div>
-
-            <div class="value-group">
-                <div class="value-group-title">HSL</div>
-                <div class="hsl-inputs">
-                    <div class="hsl-input">
-                        <span>H</span>
-                        <input 
-                            type="number" 
-                            min="0" max="360" 
-                            bind:value={hue}
-                            onchange={updateHSL}
-                        />
-                    </div>
-                    <div class="hsl-input">
-                        <span>S</span>
-                        <input 
-                            type="number" 
-                            min="0" max="100" 
-                            bind:value={saturation}
-                            onchange={updateHSL}
-                        />
-                    </div>
-                    <div class="hsl-input">
-                        <span>L</span>
-                        <input 
-                            type="number" 
-                            min="0" max="100" 
-                            bind:value={lightness}
-                            onchange={updateHSL}
-                        />
-                    </div>
-                    <button 
-                        class="copy-btn"
-                        class:copied={copied === 'hsl'}
-                        onclick={() => copyToClipboard(getHslaString(), 'hsl')}
-                    >
-                        {copied === 'hsl' ? '✓' : '📋'}
-                    </button>
-                </div>
-            </div>
+        <div class="row">
+          <span class="tag">RGB</span>
+          <div class="triple">
+            <label><i>R</i><input type="number" min="0" max="255" bind:value={r} onchange={updateRgb} /></label>
+            <label><i>G</i><input type="number" min="0" max="255" bind:value={g} onchange={updateRgb} /></label>
+            <label><i>B</i><input type="number" min="0" max="255" bind:value={b} onchange={updateRgb} /></label>
+          </div>
+          <CopyButton value={() => getRgbaString()} icon title="复制 RGB" />
         </div>
-    </div>
 
-    <!-- 配色方案 -->
-    <div class="schemes-section">
-        <h3>🎨 配色方案</h3>
-        <div class="schemes-grid">
-            <div class="scheme-item">
-                <span class="scheme-label">互补色</span>
-                <div class="scheme-colors">
-                    <div class="scheme-color" style="background: {hexColor}"></div>
-                    <div class="scheme-color" style="background: {getComplementaryColor()}"></div>
-                </div>
-            </div>
-            <div class="scheme-item">
-                <span class="scheme-label">类似色</span>
-                <div class="scheme-colors">
-                    {#each getAnalogousColors() as color}
-                        <div class="scheme-color" style="background: {color}"></div>
-                    {/each}
-                </div>
-            </div>
-            <div class="scheme-item">
-                <span class="scheme-label">三等分色</span>
-                <div class="scheme-colors">
-                    {#each getTriadicColors() as color}
-                        <div class="scheme-color" style="background: {color}"></div>
-                    {/each}
-                </div>
-            </div>
+        <div class="row">
+          <span class="tag">HSL</span>
+          <div class="triple">
+            <label><i>H</i><input type="number" min="0" max="360" bind:value={hue} onchange={updateHSL} /></label>
+            <label><i>S</i><input type="number" min="0" max="100" bind:value={saturation} onchange={updateHSL} /></label>
+            <label><i>L</i><input type="number" min="0" max="100" bind:value={lightness} onchange={updateHSL} /></label>
+          </div>
+          <CopyButton value={() => getHslaString()} icon title="复制 HSL" />
         </div>
-    </div>
+      </div>
 
-    <!-- 对比度检查 -->
-    <div class="contrast-section">
-        <h3>📊 对比度检查 (WCAG)</h3>
-        <div class="contrast-grid">
-            <div class="contrast-item">
-                <div class="contrast-preview" style="background: {hexColor}; color: white;">
-                    白色文字
-                </div>
-                <div class="contrast-info">
-                    <span class="contrast-ratio">{contrastWithWhite.toFixed(2)}:1</span>
-                    <span class="contrast-level" class:pass={contrastWithWhite >= 4.5} class:fail={contrastWithWhite < 4.5}>
-                        {contrastWithWhite >= 7 ? 'AAA' : contrastWithWhite >= 4.5 ? 'AA' : '不通过'}
-                    </span>
-                </div>
-            </div>
-            <div class="contrast-item">
-                <div class="contrast-preview" style="background: {hexColor}; color: black;">
-                    黑色文字
-                </div>
-                <div class="contrast-info">
-                    <span class="contrast-ratio">{contrastWithBlack.toFixed(2)}:1</span>
-                    <span class="contrast-level" class:pass={contrastWithBlack >= 4.5} class:fail={contrastWithBlack < 4.5}>
-                        {contrastWithBlack >= 7 ? 'AAA' : contrastWithBlack >= 4.5 ? 'AA' : '不通过'}
-                    </span>
-                </div>
-            </div>
+      <div class="schemes">
+        <div class="scheme">
+          <span>互补色</span>
+          <div class="swatches">
+            <button class="swatch" style="background: {hexColor}" title={hexColor} aria-label="当前色"></button>
+            <button
+              class="swatch"
+              style="background: {getComplementaryColor()}"
+              title={getComplementaryColor()}
+              aria-label="互补色"
+              onclick={() => selectPresetColor(getComplementaryColor())}
+            ></button>
+          </div>
         </div>
-    </div>
-
-    <!-- 渐变生成器 -->
-    <div class="gradient-section">
-        <h3>🌈 渐变生成器</h3>
-        <div class="gradient-preview" style="background: {getGradientCSS()}"></div>
-        <div class="gradient-controls">
-            <div class="gradient-colors">
-                <div class="gradient-color-input">
-                    <input type="color" bind:value={gradientColor1} />
-                    <input type="text" bind:value={gradientColor1} />
-                </div>
-                <div class="gradient-color-input">
-                    <input type="color" bind:value={gradientColor2} />
-                    <input type="text" bind:value={gradientColor2} />
-                </div>
-            </div>
-            <div class="gradient-options">
-                <select bind:value={gradientType}>
-                    <option value="linear">线性渐变</option>
-                    <option value="radial">径向渐变</option>
-                </select>
-                {#if gradientType === 'linear'}
-                    <div class="angle-input">
-                        <label for="gradient-angle">角度: {gradientAngle}°</label>
-                        <input 
-                            id="gradient-angle"
-                            type="range" 
-                            min="0" max="360" 
-                            bind:value={gradientAngle}
-                        />
-                    </div>
-                {/if}
-            </div>
-            <button 
-                class="copy-gradient-btn"
-                class:copied={copied === 'gradient'}
-                onclick={() => copyToClipboard(getGradientCSS(), 'gradient')}
-            >
-                {copied === 'gradient' ? '✓ 已复制' : '📋 复制CSS'}
-            </button>
-        </div>
-    </div>
-
-    <!-- 预设调色板 -->
-    <div class="palettes-section">
-        <h3>🎯 预设调色板</h3>
-        <div class="palette-tabs">
-            {#each Object.keys(presetPalettes) as palette}
-                <button class="palette-tab" onclick={() => {}}>
-                    {palette === 'material' ? 'Material' : 
-                     palette === 'tailwind' ? 'Tailwind' : 
-                     palette === 'pastel' ? 'Pastel' : 'Neutral'}
-                </button>
+        <div class="scheme">
+          <span>类似色</span>
+          <div class="swatches">
+            {#each getAnalogousColors() as color (color)}
+              <button class="swatch" style="background: {color}" title={color} aria-label={color} onclick={() => selectPresetColor(color)}></button>
             {/each}
+          </div>
         </div>
-        <div class="palettes-grid">
-            {#each Object.entries(presetPalettes) as [name, colors]}
-                <div class="palette-group">
-                    <span class="palette-name">{name}</span>
-                    <div class="palette-colors">
-                        {#each colors as color}
-                            <button 
-                                class="palette-color"
-                                style="background: {color}"
-                                onclick={() => selectPresetColor(color)}
-                                title={color}
-                            ></button>
-                        {/each}
-                    </div>
-                </div>
+        <div class="scheme">
+          <span>三等分色</span>
+          <div class="swatches">
+            {#each getTriadicColors() as color (color)}
+              <button class="swatch" style="background: {color}" title={color} aria-label={color} onclick={() => selectPresetColor(color)}></button>
             {/each}
+          </div>
         </div>
+      </div>
+    </Panel>
+  </div>
+
+  <Panel title="对比度检查（WCAG）">
+    <div class="contrast">
+      <div class="cell">
+        <div class="sample" style="background: {hexColor}; color: #fff;">白色文字</div>
+        <div class="verdict">
+          <code>{contrastWithWhite.toFixed(2)}:1</code>
+          <span class:pass={contrastWithWhite >= 4.5} class:fail={contrastWithWhite < 4.5}>
+            {contrastWithWhite >= 7 ? "AAA" : contrastWithWhite >= 4.5 ? "AA" : "不通过"}
+          </span>
+        </div>
+      </div>
+      <div class="cell">
+        <div class="sample" style="background: {hexColor}; color: #000;">黑色文字</div>
+        <div class="verdict">
+          <code>{contrastWithBlack.toFixed(2)}:1</code>
+          <span class:pass={contrastWithBlack >= 4.5} class:fail={contrastWithBlack < 4.5}>
+            {contrastWithBlack >= 7 ? "AAA" : contrastWithBlack >= 4.5 ? "AA" : "不通过"}
+          </span>
+        </div>
+      </div>
+    </div>
+    <p class="hint">正文需 ≥ 4.5:1（AA），≥ 7:1 为 AAA；大号文字（≥ 18.66px 粗体或 24px）门槛为 3:1。</p>
+  </Panel>
+
+  <Panel title="渐变生成">
+    {#snippet actions()}
+      <CopyButton value={() => getGradientCSS()} label="复制 CSS" />
+    {/snippet}
+
+    <div class="gradient" style="background: {getGradientCSS()}"></div>
+    <div class="gradient-controls">
+      <label class="pick"><input type="color" bind:value={gradientColor1} aria-label="渐变起始色" /><input type="text" bind:value={gradientColor1} aria-label="渐变起始色值" /></label>
+      <label class="pick"><input type="color" bind:value={gradientColor2} aria-label="渐变结束色" /><input type="text" bind:value={gradientColor2} aria-label="渐变结束色值" /></label>
+      <select bind:value={gradientType} aria-label="渐变类型">
+        <option value="linear">线性渐变</option>
+        <option value="radial">径向渐变</option>
+      </select>
+      {#if gradientType === "linear"}
+        <label class="angle">
+          <span>{gradientAngle}°</span>
+          <input type="range" min="0" max="360" bind:value={gradientAngle} aria-label="渐变角度" />
+        </label>
+      {/if}
+    </div>
+    <code class="css">{getGradientCSS()}</code>
+  </Panel>
+
+  <Panel title="调色板">
+    <div class="palettes">
+      {#each Object.entries(presetPalettes) as [name, colors] (name)}
+        <div class="palette">
+          <span class="palette-name">{name}</span>
+          <div class="swatches">
+            {#each colors as color (color)}
+              <button class="swatch" style="background: {color}" title={color} aria-label={color} onclick={() => selectPresetColor(color)}></button>
+            {/each}
+          </div>
+        </div>
+      {/each}
     </div>
 
-    <!-- 颜色历史 -->
     {#if colorHistory.length > 0}
-        <div class="history-section">
-            <h3>📜 最近使用</h3>
-            <div class="history-colors">
-                {#each colorHistory as color}
-                    <button 
-                        class="history-color"
-                        style="background: {color}"
-                        onclick={() => selectPresetColor(color)}
-                        title={color}
-                    ></button>
-                {/each}
-            </div>
+      <div class="palette history">
+        <span class="palette-name">最近使用</span>
+        <div class="swatches">
+          {#each colorHistory as color (color)}
+            <button class="swatch" style="background: {color}" title={color} aria-label={color} onclick={() => selectPresetColor(color)}></button>
+          {/each}
         </div>
+      </div>
     {/if}
+  </Panel>
 </div>
 
 <style>
-    .color-tool {
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-    }
-
-    .main-section {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1.5rem;
-    }
-
-    @media (max-width: 768px) {
-        .main-section {
-            grid-template-columns: 1fr;
-        }
-    }
-
-    /* 颜色选择器区域 */
-    .picker-section {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-    }
-
-    .color-preview-area {
-        display: flex;
-        gap: 0.75rem;
-    }
-
-    .color-preview {
-        flex: 1;
-        height: 80px;
-        border-radius: var(--radius-sm);
-        border: 1px solid var(--border);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: background-color 0.2s;
-    }
-
-    .preview-text {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 1.1rem;
-        font-weight: 600;
-    }
-
-    .random-btn {
-        padding: 0.75rem 1rem !important;
-        background: var(--bg-dark) !important;
-        border: 1px solid var(--border) !important;
-        white-space: nowrap;
-    }
-
-    .color-selector {
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-    }
-
-    .color-area {
-        position: relative;
-        width: 100%;
-        height: 180px;
-        border-radius: var(--radius-sm);
-        border: 1px solid var(--border);
-        cursor: crosshair;
-    }
-
-    .color-pointer {
-        position: absolute;
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        border: 2px solid white;
-        box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
-        transform: translate(-50%, -50%);
-        pointer-events: none;
-    }
-
-    .hue-slider {
-        position: relative;
-        width: 100%;
-        height: 16px;
-        border-radius: 8px;
-        cursor: pointer;
-        border: 1px solid var(--border);
-    }
-
-    .hue-thumb {
-        position: absolute;
-        top: 50%;
-        width: 10px;
-        height: 20px;
-        background: white;
-        border-radius: 3px;
-        border: 1px solid var(--border);
-        transform: translate(-50%, -50%);
-        pointer-events: none;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-    }
-
-    .alpha-slider-container {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    }
-
-    .slider-label {
-        font-size: 0.85rem;
-        color: var(--text-secondary);
-        min-width: 80px;
-    }
-
-    .alpha-slider {
-        flex: 1;
-        height: 8px;
-        -webkit-appearance: none;
-        appearance: none;
-        background: linear-gradient(to right, transparent, var(--text-primary));
-        border-radius: 4px;
-        outline: none;
-    }
-
-    .alpha-slider::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        appearance: none;
-        width: 16px;
-        height: 16px;
-        background: white;
-        border: 1px solid var(--border);
-        border-radius: 50%;
-        cursor: pointer;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-    }
-
-    /* 数值输入区域 */
-    .values-section {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-        background: var(--bg-dark);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        padding: 1rem;
-    }
-
-    .value-group {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .value-group label,
-    .value-group-title {
-        font-size: 0.85rem;
-        font-weight: 500;
-        color: var(--text-secondary);
-    }
-
-    .input-row {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    .input-row input {
-        flex: 1;
-        font-family: 'JetBrains Mono', monospace;
-    }
-
-    .rgb-inputs, .hsl-inputs {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    .rgb-input, .hsl-input {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-        flex: 1;
-    }
-
-    .rgb-input span, .hsl-input span {
-        font-size: 0.75rem;
-        color: var(--text-muted);
-        text-align: center;
-    }
-
-    .rgb-input input, .hsl-input input {
-        width: 100%;
-        text-align: center;
-        font-family: 'JetBrains Mono', monospace;
-        padding: 0.5rem !important;
-    }
-
-    .copy-btn {
-        padding: 0.5rem 0.75rem !important;
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border) !important;
-        min-width: 40px;
-    }
-
-    .copy-btn.copied {
-        background: var(--accent-green) !important;
-        border-color: var(--accent-green) !important;
-        color: white !important;
-    }
-
-    /* 配色方案 */
-    .schemes-section, .contrast-section, .gradient-section, .palettes-section, .history-section {
-        background: var(--bg-dark);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        padding: 1rem;
-    }
-
-    .schemes-section h3, .contrast-section h3, .gradient-section h3, .palettes-section h3, .history-section h3 {
-        font-size: 0.95rem;
-        margin-bottom: 0.75rem;
-        color: var(--text-secondary);
-    }
-
-    .schemes-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 1rem;
-    }
-
-    @media (max-width: 640px) {
-        .schemes-grid {
-            grid-template-columns: 1fr;
-        }
-    }
-
-    .scheme-item {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .scheme-label {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-    }
-
-    .scheme-colors {
-        display: flex;
-        border-radius: var(--radius-sm);
-        overflow: hidden;
-    }
-
-    .scheme-color {
-        flex: 1;
-        height: 40px;
-    }
-
-    /* 对比度检查 */
-    .contrast-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1rem;
-    }
-
-    @media (max-width: 480px) {
-        .contrast-grid {
-            grid-template-columns: 1fr;
-        }
-    }
-
-    .contrast-item {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .contrast-preview {
-        padding: 1rem;
-        text-align: center;
-        border-radius: var(--radius-sm);
-        font-weight: 500;
-    }
-
-    .contrast-info {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .contrast-ratio {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.9rem;
-    }
-
-    .contrast-level {
-        padding: 0.2rem 0.5rem;
-        border-radius: 4px;
-        font-size: 0.75rem;
-        font-weight: 600;
-    }
-
-    .contrast-level.pass {
-        background: rgba(16, 185, 129, 0.2);
-        color: var(--accent-green);
-    }
-
-    .contrast-level.fail {
-        background: rgba(239, 68, 68, 0.2);
-        color: #ef4444;
-    }
-
-    /* 渐变生成器 */
-    .gradient-preview {
-        height: 80px;
-        border-radius: var(--radius-sm);
-        border: 1px solid var(--border);
-        margin-bottom: 1rem;
-    }
-
-    .gradient-controls {
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-    }
-
-    .gradient-colors {
-        display: flex;
-        gap: 1rem;
-    }
-
-    .gradient-color-input {
-        flex: 1;
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    .gradient-color-input input[type="color"] {
-        width: 40px;
-        height: 36px;
-        padding: 0;
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        cursor: pointer;
-    }
-
-    .gradient-color-input input[type="text"] {
-        flex: 1;
-        font-family: 'JetBrains Mono', monospace;
-    }
-
-    .gradient-options {
-        display: flex;
-        gap: 1rem;
-        align-items: center;
-    }
-
-    .gradient-options select {
-        padding: 0.6rem 2.5rem 0.6rem 1rem;
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        background: var(--bg-card);
-        color: var(--text-primary);
-        font-size: 0.9rem;
-        cursor: pointer;
-        appearance: none;
-        -webkit-appearance: none;
-        background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
-        background-repeat: no-repeat;
-        background-position: right 0.75rem center;
-        background-size: 1em;
-    }
-
-    .gradient-options select:focus {
-        outline: none;
-        border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
-    }
-
-    .gradient-options select option {
-        background: #1a1a2e;
-        color: #e4e4e7;
-        padding: 0.5rem;
-    }
-
-    .angle-input {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-    }
-
-    .angle-input label {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-    }
-
-    .angle-input input {
-        width: 100%;
-    }
-
-    .copy-gradient-btn {
-        padding: 0.5rem 1rem !important;
-        background: var(--primary) !important;
-    }
-
-    .copy-gradient-btn.copied {
-        background: var(--accent-green) !important;
-    }
-
-    /* 预设调色板 */
-    .palette-tabs {
-        display: flex;
-        gap: 0.5rem;
-        margin-bottom: 1rem;
-        flex-wrap: wrap;
-    }
-
-    .palette-tab {
-        padding: 0.4rem 0.75rem !important;
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border) !important;
-        font-size: 0.85rem;
-    }
-
-    .palettes-grid {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-    }
-
-    .palette-group {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .palette-name {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-        text-transform: capitalize;
-    }
-
-    .palette-colors {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-    }
-
-    .palette-color {
-        width: 28px;
-        height: 28px;
-        border-radius: 4px;
-        border: 1px solid var(--border) !important;
-        padding: 0 !important;
-        cursor: pointer;
-        transition: transform 0.15s;
-    }
-
-    .palette-color:hover {
-        transform: scale(1.2);
-        z-index: 1;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
-    }
-
-    /* 颜色历史 */
-    .history-colors {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-    }
-
-    .history-color {
-        width: 32px;
-        height: 32px;
-        border-radius: var(--radius-sm);
-        border: 1px solid var(--border) !important;
-        padding: 0 !important;
-        cursor: pointer;
-        transition: transform 0.15s;
-    }
-
-    .history-color:hover {
-        transform: scale(1.15);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
-    }
+  .tool {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    flex: 1;
+    min-height: 0;
+  }
+
+  .top {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: var(--sp-3);
+  }
+
+  .preview {
+    height: 76px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-semibold);
+    border: 1px solid var(--color-border);
+  }
+
+  .area {
+    position: relative;
+    height: 150px;
+    margin-top: var(--sp-3);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    cursor: crosshair;
+  }
+
+  .pointer {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border: 2px solid #fff;
+    border-radius: var(--radius-full);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+
+  .hue {
+    position: relative;
+    height: 14px;
+    margin-top: var(--sp-3);
+    border-radius: var(--radius-full);
+    border: 1px solid var(--color-border);
+    cursor: pointer;
+  }
+
+  .thumb {
+    position: absolute;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    border: 2px solid #fff;
+    border-radius: var(--radius-full);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+
+  .alpha {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    margin-top: var(--sp-3);
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .alpha input {
+    flex: 1;
+    accent-color: var(--color-primary);
+  }
+
+  .values {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+
+  .tag {
+    width: 2.4rem;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+    color: var(--color-text-muted);
+  }
+
+  .row > input[type="text"] {
+    flex: 1;
+  }
+
+  .triple {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--sp-2);
+  }
+
+  .triple label {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+  }
+
+  .triple i {
+    font-style: normal;
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+  }
+
+  input[type="text"],
+  input[type="number"] {
+    width: 100%;
+    min-width: 0;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    padding: 0.3rem var(--sp-2);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+  }
+
+  input[type="text"]:focus,
+  input[type="number"]:focus {
+    outline: none;
+    border-color: var(--color-primary);
+  }
+
+  .schemes {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    margin-top: var(--sp-4);
+  }
+
+  .scheme {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+
+  .scheme > span {
+    width: 4.5rem;
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+  }
+
+  .swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-1);
+  }
+
+  .swatch {
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    cursor: pointer;
+    transition: transform var(--motion);
+  }
+
+  .swatch:hover {
+    transform: scale(1.12);
+  }
+
+  .contrast {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--sp-3);
+  }
+
+  .cell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+
+  .sample {
+    padding: var(--sp-4);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    text-align: center;
+    font-size: var(--fs-md);
+  }
+
+  .verdict {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    font-size: var(--fs-sm);
+  }
+
+  .verdict code {
+    font-family: var(--font-mono);
+    color: var(--color-text-secondary);
+  }
+
+  .verdict .pass {
+    color: var(--color-success);
+    font-weight: var(--fw-semibold);
+  }
+
+  .verdict .fail {
+    color: var(--color-danger);
+    font-weight: var(--fw-semibold);
+  }
+
+  .hint {
+    margin-top: var(--sp-3);
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+  }
+
+  .gradient {
+    height: 90px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+  }
+
+  .gradient-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+    margin-top: var(--sp-3);
+  }
+
+  .pick {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+
+  .pick input[type="color"] {
+    width: 34px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: none;
+    cursor: pointer;
+  }
+
+  .pick input[type="text"] {
+    width: 92px;
+  }
+
+  .gradient-controls select {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    padding: 0.3rem var(--sp-2);
+    font-size: var(--fs-sm);
+  }
+
+  .angle {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .angle input {
+    accent-color: var(--color-primary);
+  }
+
+  .css {
+    display: block;
+    margin-top: var(--sp-3);
+    padding: var(--sp-2);
+    border-radius: var(--radius-sm);
+    background: var(--color-code-bg);
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--color-accent);
+    word-break: break-all;
+  }
+
+  .palettes {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+
+  .palette {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+
+  .palette-name {
+    width: 5.5rem;
+    flex-shrink: 0;
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+    text-transform: capitalize;
+  }
+
+  .history {
+    margin-top: var(--sp-3);
+    padding-top: var(--sp-3);
+    border-top: 1px solid var(--color-border);
+  }
 </style>

@@ -1,550 +1,304 @@
 <script lang="ts">
-    import JSEncrypt from "jsencrypt";
-    import CryptoJS from "crypto-js";
+  import JSEncrypt from "jsencrypt";
+  import CryptoJS from "crypto-js";
+  import Button from "../../lib/ui/Button.svelte";
+  import CopyButton from "../../lib/ui/CopyButton.svelte";
+  import Panel from "../../lib/ui/Panel.svelte";
+  import SplitPane from "../../lib/ui/SplitPane.svelte";
+  import Tabs from "../../lib/ui/Tabs.svelte";
+  import TextArea from "../../lib/ui/TextArea.svelte";
+  import TextInput from "../../lib/ui/TextInput.svelte";
+  import { toast } from "../../lib/toast.svelte";
 
-    let inputText = $state("");
-    let outputText = $state("");
-    let selectedAlgorithm = $state("AES");
-    let publicKey = $state("");
-    let privateKey = $state("");
-    let errorMessage = $state("");
-    let successMessage = $state("");
-    let copied = $state(false);
+  type Algorithm = "AES" | "TripleDES" | "DES" | "RSA" | "Base64";
 
-    const algorithms = [
-        { id: "AES", name: "AES", desc: "高级加密标准，对称加密" },
-        { id: "RSA", name: "RSA", desc: "非对称加密，需要公私钥对" },
-        { id: "DES", name: "DES", desc: "数据加密标准，对称加密" },
-        { id: "TripleDES", name: "3DES", desc: "三重DES，更安全" },
-        { id: "Base64", name: "Base64", desc: "编码方式，非加密" },
-    ];
+  const ALGORITHMS: { value: Algorithm; label: string }[] = [
+    { value: "AES", label: "AES" },
+    { value: "TripleDES", label: "3DES" },
+    { value: "DES", label: "DES" },
+    { value: "RSA", label: "RSA" },
+    { value: "Base64", label: "Base64" },
+  ];
 
-    function generateRSAKeyPair() {
-        try {
-            const encryptor = new JSEncrypt({ default_key_size: "2048" });
-            encryptor.getKey();
-            privateKey = encryptor.getPrivateKey();
-            publicKey = encryptor.getPublicKey();
-            successMessage = "RSA密钥对生成成功";
-            setTimeout(() => successMessage = "", 2000);
-        } catch (err: any) {
-            errorMessage = "生成密钥对失败: " + err.message;
-            setTimeout(() => errorMessage = "", 3000);
-        }
+  let algorithm = $state<Algorithm>("AES");
+  let direction = $state<"encrypt" | "decrypt">("encrypt");
+  let input = $state("");
+  let output = $state("");
+  let error = $state("");
+
+  // 对称算法用口令；RSA 用公私钥
+  let passphrase = $state("");
+  let publicKey = $state("");
+  let privateKey = $state("");
+  let generating = $state(false);
+
+  const isRsa = $derived(algorithm === "RSA");
+  const isBase64 = $derived(algorithm === "Base64");
+
+  function encodeBase64(text: string): string {
+    const bytes = new TextEncoder().encode(text);
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary);
+  }
+
+  function decodeBase64(text: string): string {
+    const binary = atob(text.trim());
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  }
+
+  function generateKeyPair() {
+    generating = true;
+    // getKey 是同步的重计算，先让出一帧让 loading 态渲染出来
+    setTimeout(() => {
+      try {
+        const encryptor = new JSEncrypt({ default_key_size: "2048" });
+        encryptor.getKey();
+        privateKey = encryptor.getPrivateKey();
+        publicKey = encryptor.getPublicKey();
+        toast.success("已生成 2048 位 RSA 密钥对");
+      } catch (err) {
+        toast.error(`生成密钥对失败：${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        generating = false;
+      }
+    }, 0);
+  }
+
+  function run() {
+    error = "";
+    output = "";
+    if (!input.trim()) {
+      error = direction === "encrypt" ? "请输入要加密的文本" : "请输入要解密的文本";
+      return;
     }
 
-    function encrypt() {
-        errorMessage = "";
-        if (!inputText.trim()) {
-            errorMessage = "请输入要加密的文本";
+    try {
+      if (isBase64) {
+        output = direction === "encrypt" ? encodeBase64(input) : decodeBase64(input);
+      } else if (isRsa) {
+        if (direction === "encrypt") {
+          if (!publicKey.trim()) {
+            error = "请先生成或粘贴 RSA 公钥";
             return;
-        }
-
-        try {
-            if (selectedAlgorithm === "Base64") {
-                outputText = btoa(unescape(encodeURIComponent(inputText)));
-            } else if (selectedAlgorithm === "RSA") {
-                if (!publicKey) {
-                    errorMessage = "请先生成或输入RSA公钥";
-                    return;
-                }
-                const encryptor = new JSEncrypt();
-                encryptor.setPublicKey(publicKey);
-                const encrypted = encryptor.encrypt(inputText);
-                outputText = encrypted || "";
-                if (!encrypted) {
-                    errorMessage = "RSA加密失败，请检查公钥格式";
-                }
-            } else if (selectedAlgorithm === "DES") {
-                if (!privateKey) {
-                    errorMessage = "请输入DES密钥";
-                    return;
-                }
-                outputText = CryptoJS.DES.encrypt(inputText, privateKey).toString();
-            } else if (selectedAlgorithm === "TripleDES") {
-                if (!privateKey) {
-                    errorMessage = "请输入3DES密钥";
-                    return;
-                }
-                outputText = CryptoJS.TripleDES.encrypt(inputText, privateKey).toString();
-            } else {
-                // AES
-                if (!privateKey) {
-                    errorMessage = "请输入AES密钥";
-                    return;
-                }
-                outputText = CryptoJS.AES.encrypt(inputText, privateKey).toString();
-            }
-            
-            if (outputText) {
-                successMessage = "加密成功";
-                setTimeout(() => successMessage = "", 2000);
-            }
-        } catch (err: any) {
-            errorMessage = "加密失败: " + err.message;
-        }
-    }
-
-    function decrypt() {
-        errorMessage = "";
-        if (!inputText.trim()) {
-            errorMessage = "请输入要解密的文本";
+          }
+          const encryptor = new JSEncrypt();
+          encryptor.setPublicKey(publicKey);
+          const encrypted = encryptor.encrypt(input);
+          if (!encrypted) {
+            error = "RSA 加密失败：请检查公钥格式，或明文超出密钥长度限制";
             return;
+          }
+          output = encrypted;
+        } else {
+          if (!privateKey.trim()) {
+            error = "请先生成或粘贴 RSA 私钥";
+            return;
+          }
+          const decryptor = new JSEncrypt();
+          decryptor.setPrivateKey(privateKey);
+          const decrypted = decryptor.decrypt(input);
+          if (!decrypted) {
+            error = "RSA 解密失败：请检查私钥与密文是否匹配";
+            return;
+          }
+          output = decrypted;
         }
-
-        try {
-            if (selectedAlgorithm === "Base64") {
-                outputText = decodeURIComponent(escape(atob(inputText)));
-            } else if (selectedAlgorithm === "RSA") {
-                if (!privateKey) {
-                    errorMessage = "请先生成或输入RSA私钥";
-                    return;
-                }
-                const decryptor = new JSEncrypt();
-                decryptor.setPrivateKey(privateKey);
-                const decrypted = decryptor.decrypt(inputText);
-                outputText = decrypted || "";
-                if (!decrypted) {
-                    errorMessage = "RSA解密失败，请检查私钥或密文";
-                }
-            } else if (selectedAlgorithm === "DES") {
-                if (!privateKey) {
-                    errorMessage = "请输入DES密钥";
-                    return;
-                }
-                const bytes = CryptoJS.DES.decrypt(inputText, privateKey);
-                outputText = bytes.toString(CryptoJS.enc.Utf8);
-                if (!outputText) {
-                    errorMessage = "DES解密失败，请检查密钥或密文";
-                }
-            } else if (selectedAlgorithm === "TripleDES") {
-                if (!privateKey) {
-                    errorMessage = "请输入3DES密钥";
-                    return;
-                }
-                const bytes = CryptoJS.TripleDES.decrypt(inputText, privateKey);
-                outputText = bytes.toString(CryptoJS.enc.Utf8);
-                if (!outputText) {
-                    errorMessage = "3DES解密失败，请检查密钥或密文";
-                }
-            } else {
-                // AES
-                if (!privateKey) {
-                    errorMessage = "请输入AES密钥";
-                    return;
-                }
-                const bytes = CryptoJS.AES.decrypt(inputText, privateKey);
-                outputText = bytes.toString(CryptoJS.enc.Utf8);
-                if (!outputText) {
-                    errorMessage = "AES解密失败，请检查密钥或密文";
-                }
-            }
-
-            if (outputText) {
-                successMessage = "解密成功";
-                setTimeout(() => successMessage = "", 2000);
-            }
-        } catch (err: any) {
-            errorMessage = "解密失败: " + err.message;
+      } else {
+        if (!passphrase) {
+          error = `请输入 ${algorithm === "TripleDES" ? "3DES" : algorithm} 口令`;
+          return;
         }
-    }
-
-    async function copyOutput() {
-        if (!outputText) return;
-        try {
-            await navigator.clipboard.writeText(outputText);
-            copied = true;
-            setTimeout(() => copied = false, 1500);
-        } catch (err) {
-            console.error("复制失败:", err);
+        const cipher =
+          algorithm === "AES"
+            ? CryptoJS.AES
+            : algorithm === "DES"
+              ? CryptoJS.DES
+              : CryptoJS.TripleDES;
+        if (direction === "encrypt") {
+          output = cipher.encrypt(input, passphrase).toString();
+        } else {
+          const decrypted = cipher.decrypt(input, passphrase).toString(CryptoJS.enc.Utf8);
+          if (!decrypted) {
+            error = "解密失败：口令不正确，或密文不是本工具生成的格式";
+            return;
+          }
+          output = decrypted;
         }
+      }
+    } catch (err) {
+      error = `${direction === "encrypt" ? "加密" : "解密"}失败：${err instanceof Error ? err.message : String(err)}`;
     }
+  }
 
-    function swapInputOutput() {
-        const temp = inputText;
-        inputText = outputText;
-        outputText = temp;
-    }
-
-    function clearAll() {
-        inputText = "";
-        outputText = "";
-        errorMessage = "";
-        successMessage = "";
-    }
-
-    const needsKey = $derived(selectedAlgorithm !== "Base64");
-    const isRSA = $derived(selectedAlgorithm === "RSA");
+  function swap() {
+    if (!output) return;
+    input = output;
+    output = "";
+    direction = direction === "encrypt" ? "decrypt" : "encrypt";
+  }
 </script>
 
-<div class="crypto-tool">
-    <div class="algorithm-selector">
-        <h3>选择加密算法</h3>
-        <div class="algorithm-grid">
-            {#each algorithms as algo}
-                <button
-                    class="algorithm-card"
-                    class:active={selectedAlgorithm === algo.id}
-                    onclick={() => selectedAlgorithm = algo.id}
-                >
-                    <span class="algo-name">{algo.name}</span>
-                    <span class="algo-desc">{algo.desc}</span>
-                </button>
-            {/each}
-        </div>
-    </div>
+<div class="tool">
+  <div class="toolbar">
+    <Tabs bind:value={algorithm} tabs={ALGORITHMS} ariaLabel="算法" onchange={() => (output = "")} />
+    <Tabs
+      bind:value={direction}
+      size="sm"
+      tabs={[
+        { value: "encrypt", label: isBase64 ? "编码" : "加密" },
+        { value: "decrypt", label: isBase64 ? "解码" : "解密" },
+      ]}
+      ariaLabel="方向"
+      onchange={() => (output = "")}
+    />
+    <div class="spacer"></div>
+    <Button size="sm" onclick={swap} disabled={!output}>⇄ 结果转输入</Button>
+    <Button
+      size="sm"
+      variant="ghost"
+      onclick={() => {
+        input = "";
+        output = "";
+        error = "";
+      }}
+    >
+      清空
+    </Button>
+    <Button variant="primary" size="sm" onclick={run}>
+      {direction === "encrypt" ? (isBase64 ? "编码" : "加密") : isBase64 ? "解码" : "解密"}
+    </Button>
+  </div>
 
-    {#if needsKey}
-        <div class="key-section">
-            <div class="key-header">
-                <h3>密钥设置</h3>
-                {#if isRSA}
-                    <button class="generate-btn" onclick={generateRSAKeyPair}>
-                        ⟳ 生成 RSA 密钥对
-                    </button>
-                {/if}
-            </div>
-            
-            {#if isRSA}
-                <div class="key-grid">
-                    <div class="key-input-group">
-                        <label for="crypto-public-key">公钥 (用于加密)</label>
-                        <textarea
-                            id="crypto-public-key"
-                            bind:value={publicKey}
-                            placeholder="RSA公钥..."
-                            rows="4"
-                        ></textarea>
-                    </div>
-                    <div class="key-input-group">
-                        <label for="crypto-private-key">私钥 (用于解密)</label>
-                        <textarea
-                            id="crypto-private-key"
-                            bind:value={privateKey}
-                            placeholder="RSA私钥..."
-                            rows="4"
-                        ></textarea>
-                    </div>
-                </div>
-            {:else}
-                <div class="key-input-group">
-                    <label for="crypto-secret-key">密钥</label>
-                    <input
-                        id="crypto-secret-key"
-                        type="text"
-                        bind:value={privateKey}
-                        placeholder="输入加密密钥..."
-                    />
-                </div>
-            {/if}
-        </div>
-    {/if}
+  {#if !isBase64}
+    <Panel title={isRsa ? "RSA 密钥对" : "口令"}>
+      {#snippet actions()}
+        {#if isRsa}
+          <Button size="sm" onclick={generateKeyPair} loading={generating}>生成 2048 位密钥对</Button>
+        {/if}
+      {/snippet}
 
-    <div class="converter-area">
-        <div class="input-panel">
-            <div class="panel-header">
-                <span>输入文本</span>
-                <span class="char-count">{inputText.length} 字符</span>
-            </div>
-            <textarea
-                bind:value={inputText}
-                placeholder="输入要加密或解密的文本..."
-                rows="8"
-            ></textarea>
+      {#if isRsa}
+        <div class="keys">
+          <label>
+            <span>公钥（加密用）</span>
+            <TextArea bind:value={publicKey} rows={4} placeholder="-----BEGIN PUBLIC KEY-----" ariaLabel="RSA 公钥" />
+          </label>
+          <label>
+            <span>私钥（解密用）</span>
+            <TextArea bind:value={privateKey} rows={4} placeholder="-----BEGIN RSA PRIVATE KEY-----" ariaLabel="RSA 私钥" />
+          </label>
         </div>
+        <p class="tip">
+          RSA 只能加密远小于密钥长度的数据（2048 位约 245 字节）。大数据的常规做法是用 RSA 加密一个随机对称密钥，再用它加密正文。
+        </p>
+      {:else}
+        <TextInput bind:value={passphrase} type="password" placeholder="输入口令" ariaLabel="口令" />
+        <p class="tip">
+          口令经 CryptoJS 的 OpenSSL 兼容 KDF 派生密钥与 IV，输出为 <code>Salted__</code> 格式，
+          只能与同样使用该格式的实现互通；跨语言对接请改用明确指定 key/IV 的实现。
+        </p>
+      {/if}
+    </Panel>
+  {/if}
 
-        <div class="action-buttons-center">
-            <button class="action-btn encrypt-btn" onclick={encrypt}>
-                🔒 加密
-            </button>
-            <button class="swap-btn" onclick={swapInputOutput} title="交换">
-                ⇄
-            </button>
-            <button class="action-btn decrypt-btn" onclick={decrypt}>
-                🔓 解密
-            </button>
-        </div>
+  <SplitPane>
+    {#snippet left()}
+      <Panel title={direction === "encrypt" ? "明文" : "密文"} grow>
+        {#snippet actions()}
+          <span class="count">{input.length} 字符</span>
+        {/snippet}
+        <TextArea bind:value={input} fill placeholder="在此输入…" ariaLabel="输入" />
+      </Panel>
+    {/snippet}
 
-        <div class="output-panel">
-            <div class="panel-header">
-                <span>输出结果</span>
-                <div class="output-actions">
-                    <span class="char-count">{outputText.length} 字符</span>
-                    {#if outputText}
-                        <button class="copy-btn" onclick={copyOutput}>
-                            {copied ? '✓ 已复制' : '复制'}
-                        </button>
-                    {/if}
-                </div>
-            </div>
-            <textarea
-                bind:value={outputText}
-                placeholder="处理结果将显示在这里..."
-                rows="8"
-                readonly
-            ></textarea>
-        </div>
-    </div>
+    {#snippet right()}
+      <Panel title={direction === "encrypt" ? "密文" : "明文"} grow>
+        {#snippet actions()}
+          <span class="count">{output.length} 字符</span>
+          <CopyButton value={() => output} disabled={!output} />
+        {/snippet}
+        <TextArea
+          value={output}
+          fill
+          readonly
+          invalid={!!error}
+          placeholder="结果将显示在这里…"
+          ariaLabel="输出"
+        />
+      </Panel>
+    {/snippet}
+  </SplitPane>
 
-    {#if errorMessage}
-        <div class="message error-message">
-            ⚠️ {errorMessage}
-        </div>
-    {/if}
-
-    {#if successMessage}
-        <div class="message success-message">
-            ✓ {successMessage}
-        </div>
-    {/if}
-
-    <div class="tool-actions">
-        <button class="secondary-btn" onclick={clearAll}>清空所有</button>
-    </div>
+  {#if error}
+    <p class="error">{error}</p>
+  {/if}
 </div>
 
 <style>
-    .crypto-tool {
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-    }
+  .tool {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    flex: 1;
+    min-height: 0;
+  }
 
-    .algorithm-selector h3,
-    .key-section h3 {
-        font-size: 0.95rem;
-        margin-bottom: 0.75rem;
-        color: var(--text-secondary);
-    }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+  }
 
-    .algorithm-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 0.75rem;
-    }
+  .spacer {
+    flex: 1;
+  }
 
-    .algorithm-card {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-        padding: 1rem !important;
-        background: var(--bg-dark) !important;
-        border: 1px solid var(--border) !important;
-        text-align: left;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
+  .count {
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+  }
 
-    .algorithm-card:hover {
-        border-color: var(--primary) !important;
-        transform: none !important;
-        box-shadow: none !important;
-    }
+  .keys {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--sp-3);
+  }
 
-    .algorithm-card.active {
-        border-color: var(--accent) !important;
-        background: rgba(34, 211, 238, 0.1) !important;
-    }
+  .keys label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+  }
 
-    .algo-name {
-        font-weight: 600;
-        font-size: 1rem;
-        color: var(--text-primary);
-    }
+  .keys span {
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
+  }
 
-    .algo-desc {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-    }
+  .tip {
+    margin-top: var(--sp-2);
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+    line-height: var(--lh-normal);
+  }
 
-    .key-section {
-        padding: 1rem;
-        background: var(--bg-dark);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-    }
+  .tip code {
+    font-family: var(--font-mono);
+    background: var(--color-code-bg);
+    padding: 0.1em 0.3em;
+    border-radius: 3px;
+  }
 
-    .key-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1rem;
-    }
-
-    .key-header h3 {
-        margin-bottom: 0;
-    }
-
-    .generate-btn {
-        padding: 0.5rem 1rem !important;
-        font-size: 0.85rem !important;
-        background: linear-gradient(135deg, var(--accent-green) 0%, #059669 100%) !important;
-    }
-
-    .key-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1rem;
-    }
-
-    .key-input-group {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .key-input-group label {
-        font-size: 0.85rem;
-        font-weight: 500;
-    }
-
-    .key-input-group textarea {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.8rem;
-        resize: vertical;
-        min-height: 80px;
-    }
-
-    .converter-area {
-        display: grid;
-        grid-template-columns: 1fr auto 1fr;
-        gap: 1rem;
-        align-items: stretch;
-    }
-
-    .input-panel, .output-panel {
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        overflow: hidden;
-        display: flex;
-        flex-direction: column;
-    }
-
-    .panel-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.75rem 1rem;
-        background: var(--bg-dark);
-        border-bottom: 1px solid var(--border);
-        font-size: 0.85rem;
-        color: var(--text-secondary);
-    }
-
-    .output-actions {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    }
-
-    .char-count {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-    }
-
-    .copy-btn {
-        padding: 0.3rem 0.75rem !important;
-        font-size: 0.8rem !important;
-        background: var(--bg-hover) !important;
-        border: 1px solid var(--border) !important;
-    }
-
-    .input-panel textarea,
-    .output-panel textarea {
-        flex: 1;
-        border: none !important;
-        border-radius: 0 !important;
-        resize: none;
-        font-family: 'JetBrains Mono', monospace;
-        min-height: 200px;
-    }
-
-    .output-panel textarea {
-        background: var(--bg-dark) !important;
-        color: var(--accent);
-    }
-
-    .action-buttons-center {
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .action-btn {
-        padding: 0.75rem 1.5rem !important;
-        font-weight: 600 !important;
-        min-width: 100px;
-    }
-
-    .encrypt-btn {
-        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%) !important;
-    }
-
-    .decrypt-btn {
-        background: linear-gradient(135deg, var(--accent-green) 0%, #059669 100%) !important;
-    }
-
-    .swap-btn {
-        width: 40px !important;
-        height: 40px !important;
-        padding: 0 !important;
-        border-radius: 50% !important;
-        background: var(--bg-dark) !important;
-        border: 1px solid var(--border) !important;
-        font-size: 1.1rem;
-    }
-
-    .swap-btn:hover {
-        border-color: var(--primary) !important;
-    }
-
-    .message {
-        padding: 0.75rem 1rem;
-        border-radius: var(--radius-sm);
-        font-size: 0.9rem;
-    }
-
-    .error-message {
-        background: rgba(239, 68, 68, 0.1);
-        border: 1px solid rgba(239, 68, 68, 0.3);
-        color: #f87171;
-    }
-
-    .success-message {
-        background: rgba(16, 185, 129, 0.1);
-        border: 1px solid rgba(16, 185, 129, 0.3);
-        color: #34d399;
-    }
-
-    .tool-actions {
-        display: flex;
-        justify-content: center;
-    }
-
-    .secondary-btn {
-        padding: 0.5rem 1.5rem !important;
-        background: var(--bg-hover) !important;
-        border: 1px solid var(--border) !important;
-    }
-
-    @media (max-width: 768px) {
-        .converter-area {
-            grid-template-columns: 1fr;
-        }
-
-        .action-buttons-center {
-            flex-direction: row;
-            padding: 0.5rem 0;
-        }
-
-        .swap-btn {
-            transform: rotate(90deg);
-        }
-
-        .key-grid {
-            grid-template-columns: 1fr;
-        }
-    }
+  .error {
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid var(--color-danger-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-danger-bg);
+    color: var(--color-danger);
+    font-size: var(--fs-sm);
+  }
 </style>

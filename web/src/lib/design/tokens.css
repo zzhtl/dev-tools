@@ -1,0 +1,162 @@
+/*
+ * 设计 token 单一来源。组件只允许消费这里的变量，不再出现字面色值/魔法间距。
+ * 主题通过 <html data-theme="dark|light"> 切换；index.html 的内联脚本在首屏前写入，避免闪烁。
+ */
+
+:root {
+  /* ── 间距刻度 ── */
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.25rem;
+  --sp-6: 1.5rem;
+  --sp-7: 2rem;
+  --sp-8: 3rem;
+
+  /* ── 字号 / 字重 / 行高 ── */
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.8125rem;
+  --fs-md: 0.875rem;
+  --fs-lg: 1rem;
+  --fs-xl: 1.125rem;
+  --fs-2xl: 1.375rem;
+
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  --lh-tight: 1.3;
+  --lh-normal: 1.55;
+  --lh-relaxed: 1.75;
+
+  /* ── 圆角 ── */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --radius-full: 999px;
+
+  /* ── 动效 ── */
+  --motion: 0.15s ease;
+  --motion-slow: 0.25s ease;
+
+  /* ── 层级 ── */
+  --z-sticky: 200;
+  --z-dropdown: 400;
+  --z-overlay: 800;
+  --z-modal: 900;
+  --z-toast: 1000;
+
+  /* ── 字体 ── */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  /* ── 布局常量 ── */
+  --sidebar-width: 232px;
+  --sidebar-width-collapsed: 60px;
+  --topbar-height: 52px;
+}
+
+/* ══════════════ 暗色（默认） ══════════════ */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-bg: #0e0e18;
+  --color-surface: #16161f;
+  --color-surface-2: #1d1d2a;
+  --color-surface-3: #262636;
+  --color-border: #2a2a3a;
+  --color-border-strong: #3b3b52;
+
+  --color-text: #ececf1;
+  --color-text-secondary: #a2a2b3;
+  --color-text-muted: #6d6d80;
+  --color-text-inverse: #ffffff;
+
+  --color-primary: #6366f1;
+  --color-primary-hover: #757bf6;
+  --color-primary-bg: rgba(99, 102, 241, 0.14);
+  --color-primary-border: rgba(99, 102, 241, 0.38);
+
+  --color-accent: #22d3ee;
+  --color-accent-bg: rgba(34, 211, 238, 0.12);
+
+  --color-success: #10b981;
+  --color-success-bg: rgba(16, 185, 129, 0.13);
+  --color-success-border: rgba(16, 185, 129, 0.34);
+
+  --color-warning: #f59e0b;
+  --color-warning-bg: rgba(245, 158, 11, 0.13);
+  --color-warning-border: rgba(245, 158, 11, 0.34);
+
+  --color-danger: #f87171;
+  --color-danger-bg: rgba(248, 113, 113, 0.13);
+  --color-danger-border: rgba(248, 113, 113, 0.34);
+
+  --color-focus-ring: rgba(99, 102, 241, 0.4);
+  --color-code-bg: #10101c;
+  --color-highlight-bg: rgba(245, 158, 11, 0.35);
+
+  --color-diff-add-bg: rgba(16, 185, 129, 0.14);
+  --color-diff-add-text: #6ee7b7;
+  --color-diff-del-bg: rgba(248, 113, 113, 0.14);
+  --color-diff-del-text: #fca5a5;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.38);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+/* ══════════════ 亮色 ══════════════ */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-bg: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1f2f6;
+  --color-surface-3: #e6e8ee;
+  --color-border: #e3e5eb;
+  --color-border-strong: #c9ccd6;
+
+  --color-text: #17181f;
+  --color-text-secondary: #56596b;
+  --color-text-muted: #8a8d9c;
+  --color-text-inverse: #ffffff;
+
+  --color-primary: #5457e5;
+  --color-primary-hover: #4649d4;
+  --color-primary-bg: rgba(84, 87, 229, 0.09);
+  --color-primary-border: rgba(84, 87, 229, 0.28);
+
+  --color-accent: #0891b2;
+  --color-accent-bg: rgba(8, 145, 178, 0.1);
+
+  --color-success: #0d9668;
+  --color-success-bg: rgba(13, 150, 104, 0.1);
+  --color-success-border: rgba(13, 150, 104, 0.28);
+
+  --color-warning: #b45309;
+  --color-warning-bg: rgba(180, 83, 9, 0.1);
+  --color-warning-border: rgba(180, 83, 9, 0.28);
+
+  --color-danger: #dc2626;
+  --color-danger-bg: rgba(220, 38, 38, 0.09);
+  --color-danger-border: rgba(220, 38, 38, 0.28);
+
+  --color-focus-ring: rgba(84, 87, 229, 0.3);
+  --color-code-bg: #f1f2f6;
+  --color-highlight-bg: rgba(245, 158, 11, 0.4);
+
+  --color-diff-add-bg: rgba(13, 150, 104, 0.12);
+  --color-diff-add-text: #04684a;
+  --color-diff-del-bg: rgba(220, 38, 38, 0.1);
+  --color-diff-del-text: #a51b1b;
+
+  --shadow-sm: 0 1px 2px rgba(16, 20, 40, 0.07);
+  --shadow: 0 4px 16px rgba(16, 20, 40, 0.1);
+  --shadow-lg: 0 16px 48px rgba(16, 20, 40, 0.16);
+}

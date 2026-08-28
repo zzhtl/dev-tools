@@ -1,4 +1,13 @@
 <script lang="ts">
+    import Button from "../../lib/ui/Button.svelte";
+    import CopyButton from "../../lib/ui/CopyButton.svelte";
+    import Panel from "../../lib/ui/Panel.svelte";
+    import SplitPane from "../../lib/ui/SplitPane.svelte";
+    import Tabs from "../../lib/ui/Tabs.svelte";
+    import TextArea from "../../lib/ui/TextArea.svelte";
+    import TextInput from "../../lib/ui/TextInput.svelte";
+    import EmptyState from "../../lib/ui/EmptyState.svelte";
+    import { escapeHtml } from "../../lib/format";
     interface MatchResult {
         fullMatch: string;
         groups: string[];
@@ -23,10 +32,8 @@
     let highlightedText = $state("");
     let replacedText = $state("");
     let isValidRegex = $state(true);
-    let showPatternDropdown = $state(false);
     let activeMode = $state<'match' | 'replace'>('match');
     let selectedCategory = $state<string>('all');
-    let copiedPattern = $state<string | null>(null);
 
     // 常用正则表达式集合（按分类整理）
     const commonPatterns: RegexPattern[] = [
@@ -185,15 +192,6 @@
         return result;
     }
 
-    function escapeHtml(text: string): string {
-        return text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-    }
-
     function toggleFlag(flag: string) {
         if (regexFlags.includes(flag)) {
             regexFlags = regexFlags.replace(flag, '');
@@ -213,15 +211,7 @@
     function selectPattern(pattern: RegexPattern) {
         regexPattern = pattern.pattern;
         testString = pattern.example;
-        showPatternDropdown = false;
         handleRegexChange();
-    }
-
-    function copyToClipboard(text: string, type: string) {
-        navigator.clipboard.writeText(text).then(() => {
-            copiedPattern = type;
-            setTimeout(() => copiedPattern = null, 2000);
-        });
     }
 
     function clearAll() {
@@ -270,896 +260,488 @@
     ];
 </script>
 
-<div class="regex-tool">
-    <!-- 标题区域 -->
-    <div class="tool-header">
-        <div class="header-content">
-            <h2>🔍 正则表达式工具</h2>
-            <p class="header-desc">在线测试、验证和替换，支持实时高亮匹配</p>
-        </div>
-        <button class="clear-btn" onclick={clearAll}>
-            <span>🗑️</span> 清空
-        </button>
+<div class="tool">
+  <Panel title="正则表达式">
+    {#snippet actions()}
+      <CopyButton value={() => regexPattern} label="复制表达式" disabled={!regexPattern} />
+      <CopyButton value={() => `/${regexPattern}/${regexFlags}`} label="复制完整" disabled={!regexPattern} />
+      <Button size="sm" variant="ghost" onclick={clearAll}>清空</Button>
+    {/snippet}
+
+    <div class="pattern" class:invalid={!isValidRegex}>
+      <span class="slash">/</span>
+      <input
+        type="text"
+        bind:value={regexPattern}
+        oninput={handleRegexChange}
+        placeholder="输入正则表达式…"
+        spellcheck="false"
+        aria-label="正则表达式"
+      />
+      <span class="slash">/</span>
+      <div class="flags">
+        {#each [
+          { flag: "g", title: "全局匹配 global" },
+          { flag: "i", title: "忽略大小写 insensitive" },
+          { flag: "m", title: "多行模式 multiline" },
+          { flag: "s", title: "点号匹配换行 dotAll" },
+        ] as item (item.flag)}
+          <button
+            class="flag"
+            class:on={regexFlags.includes(item.flag)}
+            onclick={() => toggleFlag(item.flag)}
+            title={item.title}
+          >
+            {item.flag}
+          </button>
+        {/each}
+      </div>
     </div>
 
-    <!-- 主编辑区域 -->
-    <div class="editor-layout">
-        <!-- 左侧：输入区域 -->
-        <div class="input-panel">
-            <!-- 正则表达式输入 -->
-            <div class="input-section">
-                <div class="section-header">
-                    <label for="regex-input">正则表达式</label>
-                    <div class="header-actions">
-                        <div class="pattern-selector">
-                            <button 
-                                class="pattern-btn"
-                                onclick={() => showPatternDropdown = !showPatternDropdown}
-                            >
-                                📚 常用模板
-                                <span class="dropdown-arrow">{showPatternDropdown ? '▲' : '▼'}</span>
-                            </button>
-                            
-                            {#if showPatternDropdown}
-                                <div class="pattern-dropdown">
-                                    <div class="category-tabs">
-                                        {#each categories as cat}
-                                            <button 
-                                                class="cat-tab"
-                                                class:active={selectedCategory === cat}
-                                                onclick={() => selectedCategory = cat}
-                                            >
-                                                {cat === 'all' ? '全部' : cat}
-                                            </button>
-                                        {/each}
-                                    </div>
-                                    <div class="pattern-list">
-                                        {#each getFilteredPatterns() as pattern}
-                                            <button class="pattern-item" onclick={() => selectPattern(pattern)}>
-                                                <div class="pattern-info">
-                                                    <span class="pattern-name">{pattern.name}</span>
-                                                    <span class="pattern-desc">{pattern.description}</span>
-                                                </div>
-                                                <code class="pattern-code">{pattern.pattern.length > 30 ? pattern.pattern.substring(0, 30) + '...' : pattern.pattern}</code>
-                                            </button>
-                                        {/each}
-                                    </div>
-                                </div>
-                            {/if}
-                        </div>
+    {#if errorMessage}
+      <p class="error">{errorMessage}</p>
+    {/if}
+
+    <details class="library">
+      <summary>常用正则模板</summary>
+      <div class="cats">
+        {#each categories as cat (cat)}
+          <button class="cat" class:on={selectedCategory === cat} onclick={() => (selectedCategory = cat)}>
+            {cat === "all" ? "全部" : cat}
+          </button>
+        {/each}
+      </div>
+      <div class="patterns">
+        {#each getFilteredPatterns() as pattern (pattern.name)}
+          <button class="pattern-item" onclick={() => selectPattern(pattern)}>
+            <span class="p-name">{pattern.name}</span>
+            <span class="p-desc">{pattern.description}</span>
+            <code>{pattern.pattern}</code>
+          </button>
+        {/each}
+      </div>
+    </details>
+  </Panel>
+
+  <div class="mode">
+    <Tabs
+      bind:value={activeMode}
+      tabs={[
+        { value: "match", label: "匹配" },
+        { value: "replace", label: "替换" },
+      ]}
+      ariaLabel="模式"
+      onchange={() => activeMode === "replace" && performReplace()}
+    />
+    {#if activeMode === "replace"}
+      <span class="hint">替换文本支持 $1、$2 引用捕获组</span>
+    {/if}
+  </div>
+
+  <SplitPane>
+    {#snippet left()}
+      <Panel title="测试文本" grow>
+        {#snippet actions()}
+          <span class="count">{testString.length} 字符</span>
+        {/snippet}
+        <TextArea
+          bind:value={testString}
+          fill
+          placeholder="输入需要测试的文本…"
+          ariaLabel="测试文本"
+          oninput={() => {
+            testRegex();
+            if (activeMode === "replace") performReplace();
+          }}
+        />
+        {#if activeMode === "replace"}
+          <div class="replace-input">
+            <TextInput
+              bind:value={replaceString}
+              mono
+              placeholder="替换为…"
+              ariaLabel="替换文本"
+              oninput={performReplace}
+            />
+          </div>
+        {/if}
+      </Panel>
+    {/snippet}
+
+    {#snippet right()}
+      <Panel title={activeMode === "match" ? "匹配高亮" : "替换预览"} grow>
+        {#snippet actions()}
+          {#if activeMode === "match"}
+            <span class="count">{matchResults.length} 个匹配</span>
+          {:else}
+            <CopyButton value={() => replacedText} disabled={!replacedText} />
+          {/if}
+        {/snippet}
+
+        {#if activeMode === "match"}
+          {#if !testString}
+            <EmptyState icon=".*" title="输入测试文本查看匹配" />
+          {:else}
+            <div class="preview">{@html highlightedText}</div>
+            {#if matchResults.length > 0}
+              <ul class="matches">
+                {#each matchResults as match, index (index)}
+                  <li>
+                    <div class="m-head">
+                      <span class="m-no">#{index + 1}</span>
+                      <span class="m-pos">{match.index}–{match.lastIndex}</span>
+                      <CopyButton value={match.fullMatch} icon title="复制匹配内容" />
                     </div>
-                </div>
-                
-                <div class="regex-input-wrapper" class:error={!isValidRegex}>
-                    <span class="regex-delimiter">/</span>
-                    <input 
-                        id="regex-input"
-                        type="text" 
-                        bind:value={regexPattern}
-                        oninput={handleRegexChange}
-                        placeholder="输入正则表达式..."
-                        spellcheck="false"
-                    />
-                    <span class="regex-delimiter">/</span>
-                    <div class="flags-container">
-                        {#each [
-                            { flag: 'g', title: '全局匹配', desc: 'global' },
-                            { flag: 'i', title: '忽略大小写', desc: 'insensitive' },
-                            { flag: 'm', title: '多行模式', desc: 'multiline' },
-                            { flag: 's', title: '点号匹配换行', desc: 'dotAll' },
-                        ] as f}
-                            <button 
-                                class="flag-btn"
-                                class:active={regexFlags.includes(f.flag)}
-                                onclick={() => toggleFlag(f.flag)}
-                                title={f.title}
-                            >
-                                {f.flag}
-                            </button>
+                    <code class="m-value">{match.fullMatch}</code>
+                    {#if match.groups.length > 0}
+                      <div class="groups">
+                        {#each match.groups as group, groupIndex (groupIndex)}
+                          <span class="group"><i>${groupIndex + 1}</i><code>{group ?? ""}</code></span>
                         {/each}
-                    </div>
-                </div>
-
-                {#if regexPattern && isValidRegex}
-                    <div class="regex-actions">
-                        <button class="action-btn" onclick={() => copyToClipboard(regexPattern, 'pattern')}>
-                            {copiedPattern === 'pattern' ? '✓ 已复制' : '📋 复制表达式'}
-                        </button>
-                        <button class="action-btn" onclick={() => copyToClipboard(`/${regexPattern}/${regexFlags}`, 'full')}>
-                            {copiedPattern === 'full' ? '✓ 已复制' : '📋 复制完整'}
-                        </button>
-                    </div>
-                {/if}
-
-                {#if errorMessage}
-                    <div class="error-message">
-                        <span class="error-icon">⚠️</span>
-                        {errorMessage}
-                    </div>
-                {/if}
-            </div>
-
-            <!-- 模式切换 -->
-            <div class="mode-tabs">
-                <button 
-                    class="mode-tab"
-                    class:active={activeMode === 'match'}
-                    onclick={() => activeMode = 'match'}
-                >
-                    🎯 匹配模式
-                </button>
-                <button 
-                    class="mode-tab"
-                    class:active={activeMode === 'replace'}
-                    onclick={() => { activeMode = 'replace'; performReplace(); }}
-                >
-                    🔄 替换模式
-                </button>
-            </div>
-
-            <!-- 测试文本 -->
-            <div class="input-section">
-                <label for="test-input">测试文本</label>
-                <textarea 
-                    id="test-input"
-                    bind:value={testString}
-                    oninput={() => { testRegex(); if (activeMode === 'replace') performReplace(); }}
-                    placeholder="输入需要测试的文本..."
-                    spellcheck="false"
-                ></textarea>
-            </div>
-
-            <!-- 替换输入（替换模式） -->
-            {#if activeMode === 'replace'}
-                <div class="input-section">
-                    <div class="section-header">
-                        <label for="replace-input">替换为</label>
-                        <span class="hint-badge">支持 $1, $2 捕获组引用</span>
-                    </div>
-                    <input 
-                        id="replace-input"
-                        type="text" 
-                        bind:value={replaceString}
-                        oninput={performReplace}
-                        placeholder="替换文本..."
-                        spellcheck="false"
-                    />
-                </div>
-            {/if}
-        </div>
-
-        <!-- 右侧：结果区域 -->
-        <div class="result-panel">
-            <!-- 高亮预览 -->
-            <div class="result-section">
-                <div class="section-header">
-                    <span class="section-title">
-                        {activeMode === 'match' ? '🎨 匹配高亮' : '🔄 替换预览'}
-                    </span>
-                    {#if matchResults.length > 0}
-                        <span class="match-count">{matchResults.length} 个匹配</span>
+                      </div>
                     {/if}
-                </div>
-                
-                <div class="preview-box">
-                    {#if activeMode === 'match'}
-                        {#if testString}
-                            <div class="highlighted-content">
-                                {@html highlightedText}
-                            </div>
-                        {:else}
-                            <div class="empty-hint">输入测试文本查看匹配结果</div>
-                        {/if}
-                    {:else}
-                        {#if replacedText}
-                            <div class="replaced-content">{replacedText}</div>
-                        {:else}
-                            <div class="empty-hint">输入替换文本查看结果</div>
-                        {/if}
-                    {/if}
-                </div>
+                  </li>
+                {/each}
+              </ul>
+            {:else if regexPattern && isValidRegex}
+              <p class="none">没有找到匹配项</p>
+            {/if}
+          {/if}
+        {:else if replacedText}
+          <pre class="preview">{replacedText}</pre>
+        {:else}
+          <EmptyState icon="↻" title="输入替换文本查看结果" />
+        {/if}
+      </Panel>
+    {/snippet}
+  </SplitPane>
 
-                {#if activeMode === 'replace' && replacedText}
-                    <button class="copy-result-btn" onclick={() => copyToClipboard(replacedText, 'result')}>
-                        {copiedPattern === 'result' ? '✓ 已复制' : '📋 复制结果'}
-                    </button>
-                {/if}
+  <details class="reference">
+    <summary>语法参考</summary>
+    <div class="ref-grid">
+      {#each syntaxReference as ref (ref.category)}
+        <div class="ref-cat">
+          <h3>{ref.category}</h3>
+          {#each ref.items as item (item.pattern)}
+            <div class="ref-item">
+              <code>{item.pattern}</code>
+              <span>{item.desc}</span>
             </div>
-
-            <!-- 匹配详情 -->
-            {#if activeMode === 'match' && matchResults.length > 0}
-                <div class="matches-section">
-                    <div class="section-header">
-                        <span class="section-title">📊 匹配详情</span>
-                    </div>
-                    
-                    <div class="matches-list">
-                        {#each matchResults as match, index}
-                            <div class="match-card">
-                                <div class="match-header">
-                                    <span class="match-number">#{index + 1}</span>
-                                    <span class="match-position">位置: {match.index}-{match.lastIndex}</span>
-                                </div>
-                                <div class="match-body">
-                                    <div class="match-row">
-                                        <span class="match-label">匹配:</span>
-                                        <code class="match-value">"{match.fullMatch}"</code>
-                                    </div>
-                                    {#if match.groups.length > 0}
-                                        <div class="groups-section">
-                                            <span class="match-label">捕获组:</span>
-                                            <div class="groups-list">
-                                                {#each match.groups as group, groupIndex}
-                                                    <div class="group-item">
-                                                        <span class="group-index">${groupIndex + 1}</span>
-                                                        <code class="group-value">"{group || ''}"</code>
-                                                    </div>
-                                                {/each}
-                                            </div>
-                                        </div>
-                                    {/if}
-                                </div>
-                            </div>
-                        {/each}
-                    </div>
-                </div>
-            {/if}
-
-            {#if activeMode === 'match' && regexPattern && testString && matchResults.length === 0 && isValidRegex}
-                <div class="no-matches">
-                    <span class="no-match-icon">🔍</span>
-                    <span>没有找到匹配项</span>
-                </div>
-            {/if}
+          {/each}
         </div>
+      {/each}
     </div>
-
-    <!-- 语法参考 -->
-    <div class="reference-section">
-        <div class="reference-header">
-            <h3>📖 正则表达式语法参考</h3>
-        </div>
-        <div class="reference-grid">
-            {#each syntaxReference as ref}
-                <div class="reference-category">
-                    <h4>{ref.category}</h4>
-                    <div class="reference-items">
-                        {#each ref.items as item}
-                            <div class="reference-item">
-                                <code class="ref-pattern">{item.pattern}</code>
-                                <span class="ref-desc">{item.desc}</span>
-                            </div>
-                        {/each}
-                    </div>
-                </div>
-            {/each}
-        </div>
-    </div>
+  </details>
 </div>
 
 <style>
-    .regex-tool {
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-    }
-
-    /* 标题区域 */
-    .tool-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        padding-bottom: 1rem;
-        border-bottom: 1px solid var(--border);
-    }
-
-    .header-content h2 {
-        font-size: 1.5rem;
-        margin: 0 0 0.25rem 0;
-        background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-    }
-
-    .header-desc {
-        font-size: 0.9rem;
-        color: var(--text-muted);
-        margin: 0;
-    }
-
-    .clear-btn {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem 1rem !important;
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border) !important;
-        font-size: 0.85rem;
-    }
-
-    .clear-btn:hover {
-        border-color: #ef4444 !important;
-        color: #ef4444 !important;
-    }
-
-    /* 编辑器布局 */
-    .editor-layout {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1.5rem;
-    }
-
-    @media (max-width: 1000px) {
-        .editor-layout {
-            grid-template-columns: 1fr;
-        }
-    }
-
-    /* 输入面板 */
-    .input-panel {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-    }
-
-    .input-section {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .input-section label {
-        font-size: 0.9rem;
-        font-weight: 600;
-        color: var(--text-secondary);
-    }
-
-    .section-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .header-actions {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    /* 正则表达式输入框 */
-    .regex-input-wrapper {
-        display: flex;
-        align-items: center;
-        background: var(--bg-dark);
-        border: 2px solid var(--border);
-        border-radius: var(--radius-sm);
-        padding: 0.5rem;
-        transition: border-color 0.2s;
-    }
-
-    .regex-input-wrapper:focus-within {
-        border-color: var(--primary);
-    }
-
-    .regex-input-wrapper.error {
-        border-color: #ef4444;
-    }
-
-    .regex-delimiter {
-        color: var(--primary);
-        font-size: 1.25rem;
-        font-weight: bold;
-        padding: 0 0.25rem;
-        font-family: 'JetBrains Mono', monospace;
-    }
-
-    .regex-input-wrapper input {
-        flex: 1;
-        background: transparent !important;
-        border: none !important;
-        padding: 0.5rem !important;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.95rem;
-    }
-
-    .regex-input-wrapper input:focus {
-        outline: none;
-    }
-
-    /* 标志按钮 */
-    .flags-container {
-        display: flex;
-        gap: 0.25rem;
-        padding-left: 0.5rem;
-        border-left: 1px solid var(--border);
-        margin-left: 0.5rem;
-    }
-
-    .flag-btn {
-        width: 28px;
-        height: 28px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0 !important;
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 4px !important;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.85rem;
-        font-weight: 600;
-        color: var(--text-muted) !important;
-        transition: all 0.2s;
-    }
-
-    .flag-btn:hover {
-        border-color: var(--primary) !important;
-    }
-
-    .flag-btn.active {
-        background: var(--primary) !important;
-        border-color: var(--primary) !important;
-        color: white !important;
-    }
-
-    /* 正则操作按钮 */
-    .regex-actions {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    .action-btn {
-        flex: 1;
-        padding: 0.5rem !important;
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border) !important;
-        font-size: 0.8rem;
-    }
-
-    .action-btn:hover {
-        border-color: var(--primary) !important;
-    }
-
-    /* 模式选项卡 */
-    .pattern-selector {
-        position: relative;
-    }
-
-    .pattern-btn {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.4rem 0.75rem !important;
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border) !important;
-        font-size: 0.85rem;
-    }
-
-    .pattern-btn:hover {
-        border-color: var(--primary) !important;
-    }
-
-    .dropdown-arrow {
-        font-size: 0.7rem;
-    }
-
-    .pattern-dropdown {
-        position: absolute;
-        top: calc(100% + 0.5rem);
-        right: 0;
-        width: 400px;
-        max-height: 450px;
-        background: var(--bg-dark);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-        z-index: 100;
-        overflow: hidden;
-    }
-
-    .category-tabs {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.25rem;
-        padding: 0.75rem;
-        background: var(--bg-card);
-        border-bottom: 1px solid var(--border);
-    }
-
-    .cat-tab {
-        padding: 0.3rem 0.6rem !important;
-        background: transparent !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 999px !important;
-        font-size: 0.75rem;
-    }
-
-    .cat-tab.active {
-        background: var(--primary) !important;
-        border-color: var(--primary) !important;
-        color: white !important;
-    }
-
-    .pattern-list {
-        max-height: 350px;
-        overflow-y: auto;
-    }
-
-    .pattern-item {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-        width: 100%;
-        padding: 0.75rem !important;
-        background: transparent !important;
-        border: none !important;
-        border-bottom: 1px solid var(--border) !important;
-        border-radius: 0 !important;
-        text-align: left;
-    }
-
-    .pattern-item:hover {
-        background: rgba(99, 102, 241, 0.1) !important;
-    }
-
-    .pattern-info {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .pattern-name {
-        font-weight: 600;
-        font-size: 0.85rem;
-    }
-
-    .pattern-desc {
-        font-size: 0.75rem;
-        color: var(--text-muted);
-    }
-
-    .pattern-code {
-        font-size: 0.75rem;
-        padding: 0.25rem 0.5rem;
-        background: var(--bg-card);
-        border-radius: 4px;
-        color: var(--primary);
-        font-family: 'JetBrains Mono', monospace;
-        word-break: break-all;
-    }
-
-    /* 错误消息 */
-    .error-message {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.75rem;
-        background: rgba(239, 68, 68, 0.1);
-        border: 1px solid rgba(239, 68, 68, 0.3);
-        border-radius: var(--radius-sm);
-        color: #ef4444;
-        font-size: 0.85rem;
-    }
-
-    .error-icon {
-        font-size: 1rem;
-    }
-
-    /* 模式切换标签 */
-    .mode-tabs {
-        display: flex;
-        background: var(--bg-dark);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        overflow: hidden;
-    }
-
-    .mode-tab {
-        flex: 1;
-        padding: 0.75rem !important;
-        background: transparent !important;
-        border: none !important;
-        border-radius: 0 !important;
-        font-size: 0.9rem;
-        color: var(--text-muted) !important;
-        transition: all 0.2s;
-    }
-
-    .mode-tab:hover {
-        background: rgba(99, 102, 241, 0.05) !important;
-    }
-
-    .mode-tab.active {
-        background: var(--primary) !important;
-        color: white !important;
-    }
-
-    /* 测试文本输入 */
-    .input-section textarea {
-        min-height: 150px;
-        resize: vertical;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.9rem;
-        line-height: 1.6;
-    }
-
-    .hint-badge {
-        font-size: 0.75rem;
-        padding: 0.2rem 0.5rem;
-        background: rgba(99, 102, 241, 0.1);
-        border-radius: 4px;
-        color: var(--primary);
-    }
-
-    /* 结果面板 */
-    .result-panel {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-    }
-
-    .result-section {
-        background: var(--bg-dark);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        overflow: hidden;
-    }
-
-    .result-section .section-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.75rem 1rem;
-        background: var(--bg-card);
-        border-bottom: 1px solid var(--border);
-    }
-
-    .section-title {
-        font-weight: 600;
-        font-size: 0.9rem;
-    }
-
-    .match-count {
-        font-size: 0.75rem;
-        padding: 0.25rem 0.75rem;
-        background: var(--accent-green);
-        color: white;
-        border-radius: 999px;
-        font-weight: 500;
-    }
-
-    .preview-box {
-        padding: 1rem;
-        min-height: 120px;
-        max-height: 250px;
-        overflow-y: auto;
-    }
-
-    .highlighted-content, .replaced-content {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.9rem;
-        line-height: 1.8;
-        white-space: pre-wrap;
-        word-break: break-all;
-    }
-
-    .highlighted-content :global(.match-highlight) {
-        background: linear-gradient(135deg, rgba(234, 179, 8, 0.3), rgba(234, 179, 8, 0.2));
-        color: #fbbf24;
-        padding: 0.1rem 0.25rem;
-        border-radius: 3px;
-        border: 1px solid rgba(234, 179, 8, 0.5);
-    }
-
-    .empty-hint {
-        color: var(--text-muted);
-        font-style: italic;
-        text-align: center;
-        padding: 2rem;
-    }
-
-    .copy-result-btn {
-        margin: 0 1rem 1rem;
-        padding: 0.5rem !important;
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border) !important;
-        font-size: 0.85rem;
-        width: calc(100% - 2rem);
-    }
-
-    .copy-result-btn:hover {
-        border-color: var(--primary) !important;
-    }
-
-    /* 匹配详情 */
-    .matches-section {
-        background: var(--bg-dark);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        overflow: hidden;
-    }
-
-    .matches-section .section-header {
-        padding: 0.75rem 1rem;
-        background: var(--bg-card);
-        border-bottom: 1px solid var(--border);
-    }
-
-    .matches-list {
-        max-height: 300px;
-        overflow-y: auto;
-        padding: 0.75rem;
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-    }
-
-    .match-card {
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        overflow: hidden;
-    }
-
-    .match-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.5rem 0.75rem;
-        background: var(--primary);
-        color: white;
-        font-size: 0.8rem;
-    }
-
-    .match-number {
-        font-weight: 600;
-    }
-
-    .match-position {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.75rem;
-        opacity: 0.9;
-    }
-
-    .match-body {
-        padding: 0.75rem;
-    }
-
-    .match-row {
-        display: flex;
-        align-items: flex-start;
-        gap: 0.5rem;
-        margin-bottom: 0.5rem;
-    }
-
-    .match-label {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-        white-space: nowrap;
-    }
-
-    .match-value {
-        font-size: 0.85rem;
-        padding: 0.25rem 0.5rem;
-        background: var(--bg-dark);
-        border-radius: 4px;
-        word-break: break-all;
-        color: #fbbf24;
-    }
-
-    .groups-section {
-        margin-top: 0.5rem;
-        padding-top: 0.5rem;
-        border-top: 1px solid var(--border);
-    }
-
-    .groups-list {
-        display: flex;
-        flex-direction: column;
-        gap: 0.375rem;
-        margin-top: 0.375rem;
-    }
-
-    .group-item {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .group-index {
-        font-size: 0.75rem;
-        padding: 0.15rem 0.4rem;
-        background: var(--primary);
-        color: white;
-        border-radius: 4px;
-        font-family: 'JetBrains Mono', monospace;
-    }
-
-    .group-value {
-        font-size: 0.85rem;
-        padding: 0.2rem 0.5rem;
-        background: var(--bg-dark);
-        border-radius: 4px;
-        color: #10b981;
-    }
-
-    /* 无匹配 */
-    .no-matches {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 2rem;
-        background: var(--bg-dark);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        color: var(--text-muted);
-    }
-
-    .no-match-icon {
-        font-size: 2rem;
-        opacity: 0.5;
-    }
-
-    /* 语法参考 */
-    .reference-section {
-        background: var(--bg-dark);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        overflow: hidden;
-    }
-
-    .reference-header {
-        padding: 0.875rem 1rem;
-        background: var(--bg-card);
-        border-bottom: 1px solid var(--border);
-    }
-
-    .reference-header h3 {
-        margin: 0;
-        font-size: 1rem;
-    }
-
-    .reference-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 1rem;
-        padding: 1rem;
-    }
-
-    .reference-category h4 {
-        font-size: 0.85rem;
-        color: var(--primary);
-        margin: 0 0 0.75rem 0;
-        padding-bottom: 0.5rem;
-        border-bottom: 1px solid var(--border);
-    }
-
-    .reference-items {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .reference-item {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    }
-
-    .ref-pattern {
-        min-width: 60px;
-        padding: 0.25rem 0.5rem;
-        background: var(--bg-card);
-        border-radius: 4px;
-        font-size: 0.85rem;
-        text-align: center;
-        color: #fbbf24;
-        font-family: 'JetBrains Mono', monospace;
-    }
-
-    .ref-desc {
-        font-size: 0.8rem;
-        color: var(--text-secondary);
-    }
+  .tool {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    flex: 1;
+    min-height: 0;
+  }
+
+  .pattern {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg);
+  }
+
+  .pattern:focus-within {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-focus-ring);
+  }
+
+  .pattern.invalid {
+    border-color: var(--color-danger);
+  }
+
+  .slash {
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--fs-lg);
+  }
+
+  .pattern input {
+    flex: 1;
+    min-width: 0;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: var(--fs-md);
+  }
+
+  .flags {
+    display: flex;
+    gap: 2px;
+  }
+
+  .flag {
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-2);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    transition:
+      background var(--motion),
+      color var(--motion);
+  }
+
+  .flag.on {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: var(--color-text-inverse);
+  }
+
+  .library,
+  .reference {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+  }
+
+  .library {
+    margin-top: var(--sp-3);
+  }
+
+  summary {
+    padding: var(--sp-2) var(--sp-3);
+    cursor: pointer;
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .cats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-1);
+    padding: 0 var(--sp-3) var(--sp-2);
+  }
+
+  .cat {
+    padding: 0.15rem var(--sp-2);
+    border-radius: var(--radius-full);
+    border: 1px solid var(--color-border);
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+  }
+
+  .cat.on {
+    border-color: var(--color-primary-border);
+    background: var(--color-primary-bg);
+    color: var(--color-primary);
+  }
+
+  .patterns {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--sp-2);
+    padding: 0 var(--sp-3) var(--sp-3);
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  .pattern-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--sp-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    text-align: left;
+  }
+
+  .pattern-item:hover {
+    border-color: var(--color-primary-border);
+  }
+
+  .p-name {
+    font-size: var(--fs-sm);
+    color: var(--color-text);
+  }
+
+  .p-desc {
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+  }
+
+  .pattern-item code {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--color-accent);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mode {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+
+  .hint,
+  .count {
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+  }
+
+  .count {
+    font-family: var(--font-mono);
+  }
+
+  .replace-input {
+    margin-top: var(--sp-2);
+  }
+
+  .preview {
+    padding: var(--sp-3);
+    border-radius: var(--radius-sm);
+    background: var(--color-code-bg);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    line-height: var(--lh-relaxed);
+    color: var(--color-text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 40%;
+    overflow: auto;
+  }
+
+  /* @html 注入的高亮片段不受 scoped 样式影响 */
+  .preview :global(mark) {
+    background: var(--color-highlight-bg);
+    color: var(--color-text);
+    border-radius: 3px;
+    padding: 0 2px;
+  }
+
+  .matches {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    margin-top: var(--sp-3);
+  }
+
+  .matches li {
+    padding: var(--sp-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+  }
+
+  .m-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+
+  .m-no {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--color-primary);
+  }
+
+  .m-pos {
+    flex: 1;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+  }
+
+  .m-value {
+    display: block;
+    margin-top: var(--sp-1);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    color: var(--color-text);
+    word-break: break-all;
+  }
+
+  .groups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    margin-top: var(--sp-2);
+  }
+
+  .group {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    padding: 0.1rem var(--sp-2);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-3);
+    font-size: var(--fs-xs);
+  }
+
+  .group i {
+    font-style: normal;
+    font-family: var(--font-mono);
+    color: var(--color-accent);
+  }
+
+  .group code {
+    font-family: var(--font-mono);
+    color: var(--color-text-secondary);
+  }
+
+  .none {
+    margin-top: var(--sp-3);
+    font-size: var(--fs-sm);
+    color: var(--color-text-muted);
+  }
+
+  .error {
+    margin-top: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid var(--color-danger-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-danger-bg);
+    color: var(--color-danger);
+    font-size: var(--fs-sm);
+  }
+
+  .ref-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--sp-4);
+    padding: 0 var(--sp-3) var(--sp-3);
+  }
+
+  .ref-cat h3 {
+    font-size: var(--fs-sm);
+    color: var(--color-text);
+    margin-bottom: var(--sp-2);
+  }
+
+  .ref-item {
+    display: flex;
+    gap: var(--sp-2);
+    padding: 2px 0;
+    font-size: var(--fs-xs);
+  }
+
+  .ref-item code {
+    min-width: 3.5rem;
+    font-family: var(--font-mono);
+    color: var(--color-accent);
+  }
+
+  .ref-item span {
+    color: var(--color-text-muted);
+  }
 </style>

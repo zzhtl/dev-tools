@@ -1,490 +1,329 @@
 <script lang="ts">
-  import CryptoJS from 'crypto-js';
+  import CryptoJS from "crypto-js";
+  import Button from "../../lib/ui/Button.svelte";
+  import CopyButton from "../../lib/ui/CopyButton.svelte";
+  import DropZone from "../../lib/ui/DropZone.svelte";
+  import Panel from "../../lib/ui/Panel.svelte";
+  import Tabs from "../../lib/ui/Tabs.svelte";
+  import TextArea from "../../lib/ui/TextArea.svelte";
+  import EmptyState from "../../lib/ui/EmptyState.svelte";
+  import { formatFileSize } from "../../lib/format";
+  import { toast } from "../../lib/toast.svelte";
 
-  let inputText = $state("");
-  let inputType = $state<"text" | "file">("text");
-  let selectedFile = $state<File | null>(null);
-  let fileContent = $state<ArrayBuffer | null>(null);
-  let computing = $state(false);
-  let copiedHash = $state<string | null>(null);
-
-  interface HashResult {
+  interface Algo {
+    key: string;
     name: string;
-    value: string;
-    description: string;
+    note: string;
+    create: () => { update: (data: unknown) => void; finalize: () => { toString: () => string } };
   }
 
-  let hashResults = $state<HashResult[]>([]);
+  const ALGOS: Algo[] = [
+    { key: "md5", name: "MD5", note: "128 位，仅适合完整性校验，勿用于安全场景", create: () => CryptoJS.algo.MD5.create() },
+    { key: "sha1", name: "SHA-1", note: "160 位，已被碰撞攻破，勿用于签名", create: () => CryptoJS.algo.SHA1.create() },
+    { key: "sha256", name: "SHA-256", note: "256 位，当前通用默认选择", create: () => CryptoJS.algo.SHA256.create() },
+    { key: "sha384", name: "SHA-384", note: "384 位，SHA-2 系列", create: () => CryptoJS.algo.SHA384.create() },
+    { key: "sha512", name: "SHA-512", note: "512 位，SHA-2 系列", create: () => CryptoJS.algo.SHA512.create() },
+    { key: "sha3", name: "SHA3-256", note: "SHA-3 标准，海绵结构", create: () => CryptoJS.algo.SHA3.create({ outputLength: 256 }) },
+    { key: "ripemd160", name: "RIPEMD-160", note: "160 位，比特币地址派生使用", create: () => CryptoJS.algo.RIPEMD160.create() },
+  ];
 
-  function computeHashes() {
-    if (!inputText && !fileContent) {
-      hashResults = [];
+  let inputType = $state<"text" | "file">("text");
+  let text = $state("");
+  // 默认只算两种：旧版无条件算 7 种，大文件下是 7 倍无谓开销
+  let selected = $state<string[]>(["md5", "sha256"]);
+  let results = $state<Record<string, string>>({});
+  let computing = $state(false);
+  let progress = $state(0);
+  let file = $state<{ name: string; size: number } | null>(null);
+
+  const activeAlgos = $derived(ALGOS.filter((algo) => selected.includes(algo.key)));
+
+  function toggle(key: string) {
+    selected = selected.includes(key) ? selected.filter((k) => k !== key) : [...selected, key];
+  }
+
+  // ── 文本 ──
+  $effect(() => {
+    if (inputType !== "text") return;
+    const value = text;
+    const algos = activeAlgos;
+    if (!value) {
+      results = {};
+      return;
+    }
+    const next: Record<string, string> = {};
+    for (const algo of algos) {
+      const hasher = algo.create();
+      hasher.update(CryptoJS.enc.Utf8.parse(value));
+      next[algo.key] = hasher.finalize().toString();
+    }
+    results = next;
+  });
+
+  // ── 文件：分块增量，避免整文件进内存并保持界面响应 ──
+  const CHUNK_SIZE = 4 * 1024 * 1024;
+  let runToken = 0;
+
+  async function hashFile(picked: File) {
+    const token = ++runToken;
+    file = { name: picked.name, size: picked.size };
+    results = {};
+    computing = true;
+    progress = 0;
+
+    const algos = activeAlgos;
+    if (algos.length === 0) {
+      computing = false;
+      toast.error("请至少选择一种算法");
       return;
     }
 
-    computing = true;
+    const hashers = algos.map((algo) => ({ key: algo.key, hasher: algo.create() }));
 
-    setTimeout(() => {
-      try {
-        let data: string | unknown;
-        
-        if (inputType === "file" && fileContent) {
-          // 将 ArrayBuffer 转换为 WordArray
-          const wordArray = CryptoJS.lib.WordArray.create(fileContent);
-          data = wordArray;
-        } else {
-          data = inputText;
-        }
-
-        hashResults = [
-          {
-            name: "MD5",
-            value: CryptoJS.MD5(data).toString(),
-            description: "128位摘要，常用于文件校验"
-          },
-          {
-            name: "SHA-1",
-            value: CryptoJS.SHA1(data).toString(),
-            description: "160位摘要，已不推荐用于安全场景"
-          },
-          {
-            name: "SHA-256",
-            value: CryptoJS.SHA256(data).toString(),
-            description: "256位摘要，广泛应用于安全场景"
-          },
-          {
-            name: "SHA-384",
-            value: CryptoJS.SHA384(data).toString(),
-            description: "384位摘要，SHA-2系列"
-          },
-          {
-            name: "SHA-512",
-            value: CryptoJS.SHA512(data).toString(),
-            description: "512位摘要，最高安全性"
-          },
-          {
-            name: "SHA3-256",
-            value: CryptoJS.SHA3(data, { outputLength: 256 }).toString(),
-            description: "SHA-3标准，256位输出"
-          },
-          {
-            name: "RIPEMD-160",
-            value: CryptoJS.RIPEMD160(data).toString(),
-            description: "160位摘要，用于比特币地址"
-          }
-        ];
-      } catch (err) {
-        console.error('计算Hash失败:', err);
-        hashResults = [];
-      } finally {
-        computing = false;
-      }
-    }, 10);
-  }
-
-  function handleFileSelect(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    
-    if (file) {
-      selectedFile = file;
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        fileContent = e.target?.result as ArrayBuffer;
-        computeHashes();
-      };
-      reader.readAsArrayBuffer(file);
-    }
-  }
-
-  async function copyHash(hash: string, name: string) {
     try {
-      await navigator.clipboard.writeText(hash);
-      copiedHash = name;
-      setTimeout(() => {
-        copiedHash = null;
-      }, 1500);
+      for (let offset = 0; offset < picked.size; offset += CHUNK_SIZE) {
+        if (token !== runToken) return; // 期间换了文件，放弃这次计算
+        const buffer = await picked.slice(offset, offset + CHUNK_SIZE).arrayBuffer();
+        const words = CryptoJS.lib.WordArray.create(buffer);
+        for (const { hasher } of hashers) hasher.update(words);
+        progress = Math.min(100, ((offset + CHUNK_SIZE) / picked.size) * 100);
+        // 让出主线程，避免长任务卡住界面
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      if (token !== runToken) return;
+      const next: Record<string, string> = {};
+      for (const { key, hasher } of hashers) next[key] = hasher.finalize().toString();
+      results = next;
+      progress = 100;
     } catch (err) {
-      console.error('复制失败:', err);
+      toast.error(`读取文件失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      if (token === runToken) computing = false;
     }
   }
 
-  function clearAll() {
-    inputText = "";
-    selectedFile = null;
-    fileContent = null;
-    hashResults = [];
+  function reset() {
+    runToken++;
+    text = "";
+    file = null;
+    results = {};
+    computing = false;
+    progress = 0;
   }
 
-  // 响应输入变化
-  $effect(() => {
-    if (inputType === "text" && inputText) {
-      computeHashes();
-    }
-  });
+  const hasResults = $derived(Object.keys(results).length > 0);
 </script>
 
-<div class="hash-tool">
-  <div class="input-section">
-    <div class="input-tabs">
-      <button 
-        class:active={inputType === "text"}
-        onclick={() => { inputType = "text"; clearAll(); }}
-      >
-        文本输入
-      </button>
-      <button 
-        class:active={inputType === "file"}
-        onclick={() => { inputType = "file"; clearAll(); }}
-      >
-        文件输入
-      </button>
-    </div>
-
-    {#if inputType === "text"}
-      <div class="text-input-area">
-        <textarea 
-          bind:value={inputText}
-          placeholder="输入要计算Hash的文本..."
-          rows="6"
-        ></textarea>
-        <div class="input-actions">
-          <span class="char-count">{inputText.length} 字符</span>
-          {#if inputText}
-            <button class="clear-btn" onclick={clearAll}>清空</button>
-          {/if}
-        </div>
-      </div>
-    {:else}
-      <div class="file-input-area">
-        <div 
-          class="file-drop-zone"
-          class:has-file={selectedFile}
-        >
-          {#if selectedFile}
-            <div class="file-info">
-              <span class="file-icon">📄</span>
-              <div class="file-details">
-                <span class="file-name">{selectedFile.name}</span>
-                <span class="file-size">{(selectedFile.size / 1024).toFixed(2)} KB</span>
-              </div>
-              <button class="remove-file-btn" onclick={clearAll}>✕</button>
-            </div>
-          {:else}
-            <div class="drop-hint">
-              <span class="drop-icon">📁</span>
-              <span>点击选择文件或拖放文件到此处</span>
-            </div>
-          {/if}
-          <input 
-            type="file" 
-            onchange={handleFileSelect}
-            class="file-input"
-          />
-        </div>
-      </div>
-    {/if}
+<div class="tool">
+  <div class="toolbar">
+    <Tabs
+      bind:value={inputType}
+      tabs={[
+        { value: "text", label: "文本" },
+        { value: "file", label: "文件" },
+      ]}
+      ariaLabel="输入来源"
+      onchange={reset}
+    />
+    <div class="spacer"></div>
+    <Button size="sm" variant="ghost" onclick={reset}>清空</Button>
   </div>
 
-  <div class="results-section">
-    <div class="results-header">
-      <h3>Hash 结果</h3>
-      {#if computing}
-        <span class="computing-badge">计算中...</span>
+  <div class="algos">
+    {#each ALGOS as algo (algo.key)}
+      <label class="algo" class:on={selected.includes(algo.key)} title={algo.note}>
+        <input
+          type="checkbox"
+          checked={selected.includes(algo.key)}
+          onchange={() => toggle(algo.key)}
+        />
+        {algo.name}
+      </label>
+    {/each}
+  </div>
+
+  {#if inputType === "text"}
+    <Panel title="输入文本">
+      {#snippet actions()}
+        <span class="count">{text.length} 字符</span>
+      {/snippet}
+      <TextArea bind:value={text} rows={6} placeholder="输入要计算摘要的文本…" ariaLabel="输入文本" />
+    </Panel>
+  {:else}
+    <Panel title="选择文件">
+      <DropZone
+        onfiles={(files) => hashFile(files[0])}
+        disabled={computing}
+        hint={computing ? "计算中…" : "拖拽文件到此处，或点击选择（分块读取，支持大文件）"}
+      />
+      {#if file}
+        <div class="fileinfo">
+          <span class="fname">{file.name}</span>
+          <span class="count">{formatFileSize(file.size)}</span>
+        </div>
       {/if}
-    </div>
+      {#if computing}
+        <div class="progress"><div class="bar" style="width: {progress}%"></div></div>
+      {/if}
+    </Panel>
+  {/if}
 
-    {#if hashResults.length > 0}
-      <div class="hash-list">
-        {#each hashResults as result}
-          <div class="hash-item">
-            <div class="hash-header">
-              <span class="hash-name">{result.name}</span>
-              <span class="hash-desc">{result.description}</span>
-            </div>
-            <div class="hash-value-row">
-              <code class="hash-value">{result.value}</code>
-              <button 
-                class="copy-btn"
-                onclick={() => copyHash(result.value, result.name)}
-              >
-                {copiedHash === result.name ? '✓ 已复制' : '复制'}
-              </button>
-            </div>
-          </div>
-        {/each}
-      </div>
+  <Panel title="摘要结果" grow>
+    {#if !hasResults}
+      <EmptyState
+        icon="#"
+        title={computing ? "正在计算…" : "还没有结果"}
+        hint={inputType === "text" ? "输入文本后自动计算" : "选择文件后开始计算"}
+      />
     {:else}
-      <div class="empty-state">
-        <span class="empty-icon">🔐</span>
-        <span>输入文本或选择文件后显示Hash结果</span>
-      </div>
+      <ul class="results">
+        {#each activeAlgos as algo (algo.key)}
+          {#if results[algo.key]}
+            <li>
+              <div class="head">
+                <span class="name">{algo.name}</span>
+                <span class="note">{algo.note}</span>
+                <CopyButton value={results[algo.key]} icon title="复制 {algo.name}" />
+              </div>
+              <code>{results[algo.key]}</code>
+            </li>
+          {/if}
+        {/each}
+      </ul>
     {/if}
-  </div>
+  </Panel>
 </div>
 
 <style>
-  .hash-tool {
+  .tool {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
-  }
-
-  .input-section {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-  }
-
-  .input-tabs {
-    display: flex;
-    background: var(--bg-dark);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .input-tabs button {
+    gap: var(--sp-3);
     flex: 1;
-    padding: 0.75rem !important;
-    background: transparent !important;
-    border: none !important;
-    border-bottom: 2px solid transparent !important;
-    color: var(--text-secondary) !important;
-    border-radius: 0 !important;
-    font-weight: 500;
+    min-height: 0;
   }
 
-  .input-tabs button.active {
-    color: var(--accent) !important;
-    border-bottom-color: var(--accent) !important;
-    background: var(--bg-hover) !important;
-  }
-
-  .input-tabs button:hover {
-    background: var(--bg-hover) !important;
-    box-shadow: none !important;
-    transform: none !important;
-  }
-
-  .text-input-area {
-    padding: 1rem;
-  }
-
-  .text-input-area textarea {
-    width: 100%;
-    min-height: 150px;
-    resize: vertical;
-    font-family: 'JetBrains Mono', monospace;
-  }
-
-  .input-actions {
+  .toolbar {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-top: 0.5rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid var(--border);
+    gap: var(--sp-3);
   }
 
-  .char-count {
-    font-size: 0.85rem;
-    color: var(--text-muted);
+  .spacer {
+    flex: 1;
   }
 
-  .clear-btn {
-    padding: 0.4rem 0.75rem !important;
-    font-size: 0.85rem !important;
-    background: var(--bg-dark) !important;
-    border: 1px solid var(--border) !important;
+  .algos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
   }
 
-  .file-input-area {
-    padding: 1rem;
-  }
-
-  .file-drop-zone {
-    position: relative;
-    border: 2px dashed var(--border);
-    border-radius: var(--radius-sm);
-    padding: 2rem;
-    text-align: center;
-    transition: all 0.2s;
+  .algo {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    padding: 0.25rem var(--sp-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: var(--color-surface);
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
     cursor: pointer;
+    transition:
+      border-color var(--motion),
+      color var(--motion);
   }
 
-  .file-drop-zone:hover {
-    border-color: var(--primary);
-    background: var(--bg-hover);
+  .algo.on {
+    border-color: var(--color-primary-border);
+    background: var(--color-primary-bg);
+    color: var(--color-primary);
   }
 
-  .file-drop-zone.has-file {
-    border-style: solid;
-    border-color: var(--accent-green);
+  .algo input {
+    accent-color: var(--color-primary);
   }
 
-  .file-input {
-    position: absolute;
-    inset: 0;
-    opacity: 0;
-    cursor: pointer;
+  .count {
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
   }
 
-  .drop-hint {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.75rem;
-    color: var(--text-muted);
-  }
-
-  .drop-icon {
-    font-size: 2rem;
-  }
-
-  .file-info {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    text-align: left;
-  }
-
-  .file-icon {
-    font-size: 2rem;
-  }
-
-  .file-details {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .file-name {
-    font-weight: 500;
-    color: var(--text-primary);
-  }
-
-  .file-size {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-  }
-
-  .remove-file-btn {
-    margin-left: auto;
-    width: 32px !important;
-    height: 32px !important;
-    padding: 0 !important;
-    background: var(--bg-dark) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 50% !important;
-    position: relative;
-    z-index: 10;
-  }
-
-  .results-section {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-  }
-
-  .results-header {
+  .fileinfo {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.75rem 1rem;
-    background: var(--bg-dark);
-    border-bottom: 1px solid var(--border);
+    gap: var(--sp-3);
+    margin-top: var(--sp-3);
+    font-size: var(--fs-sm);
   }
 
-  .results-header h3 {
-    font-size: 0.95rem;
-    font-weight: 500;
-  }
-
-  .computing-badge {
-    font-size: 0.8rem;
-    padding: 0.25rem 0.75rem;
-    background: var(--primary);
-    color: white;
-    border-radius: 100px;
-    animation: pulse 1s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
-  }
-
-  .hash-list {
-    max-height: 500px;
-    overflow-y: auto;
-  }
-
-  .hash-item {
-    padding: 1rem;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .hash-item:last-child {
-    border-bottom: none;
-  }
-
-  .hash-header {
-    display: flex;
-    align-items: baseline;
-    gap: 0.75rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .hash-name {
-    font-weight: 600;
-    color: var(--accent);
-    font-size: 0.9rem;
-  }
-
-  .hash-desc {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-  }
-
-  .hash-value-row {
-    display: flex;
-    gap: 0.75rem;
-    align-items: center;
-  }
-
-  .hash-value {
-    flex: 1;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.85rem;
-    padding: 0.5rem 0.75rem !important;
-    background: var(--bg-dark) !important;
-    border-radius: var(--radius-sm);
-    word-break: break-all;
-    color: var(--text-primary);
-  }
-
-  .copy-btn {
-    padding: 0.5rem 1rem !important;
-    font-size: 0.85rem !important;
-    background: var(--bg-hover) !important;
-    border: 1px solid var(--border) !important;
+  .fname {
+    font-family: var(--font-mono);
+    color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .copy-btn:hover {
-    border-color: var(--primary) !important;
+  .progress {
+    margin-top: var(--sp-2);
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--color-surface-3);
+    overflow: hidden;
   }
 
-  .empty-state {
+  .bar {
+    height: 100%;
+    background: var(--color-primary);
+    transition: width var(--motion);
+  }
+
+  .results {
+    list-style: none;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem;
-    gap: 0.75rem;
-    color: var(--text-muted);
+    gap: var(--sp-3);
   }
 
-  .empty-icon {
-    font-size: 2.5rem;
+  .results li {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+  }
+
+  .head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+
+  .name {
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
+    color: var(--color-text);
+  }
+
+  .note {
+    flex: 1;
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .results code {
+    padding: var(--sp-2);
+    border-radius: var(--radius-sm);
+    background: var(--color-code-bg);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    color: var(--color-accent);
+    word-break: break-all;
+    user-select: all;
   }
 </style>

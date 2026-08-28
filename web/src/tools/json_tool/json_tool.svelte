@@ -1,4 +1,11 @@
 <script lang="ts">
+  import Button from "../../lib/ui/Button.svelte";
+  import CopyButton from "../../lib/ui/CopyButton.svelte";
+  import DiffView from "../../lib/ui/DiffView.svelte";
+  import Tabs from "../../lib/ui/Tabs.svelte";
+  import EmptyState from "../../lib/ui/EmptyState.svelte";
+  import { readStore, writeStore } from "../../lib/storage";
+  import { escapeHtml } from "../../lib/format";
   import { tick, untrack } from "svelte";
   import { apiJson } from "../../lib/api";
   import { downloadBlob } from "../../lib/download";
@@ -10,7 +17,6 @@
   let errorInfo = $state<ErrorInfo | null>(null);
   let isProcessing = $state(false);
   let activeMode = $state("format");
-  let copied = $state<string | null>(null);
   let indentSize = $state(2);
   let sortKeys = $state(false);
   let showStats = $state(false);
@@ -20,13 +26,68 @@
   let activeSearchIndex = $state(-1);
   let jsonPath = $state("");
   let jsonPathResult = $state("");
-  let history = $state<HistoryItem[]>([]);
+  // 历史记录落盘。此前是纯内存状态，切换工具即丢失。
+  interface StoredHistoryItem {
+    id: string;
+    content: string;
+    preview: string;
+    timestamp: number;
+    size: number;
+  }
+  const HISTORY_KEY = "json.history";
+  /** 单条超过这个体积就不落盘，避免撑爆 localStorage 配额 */
+  const HISTORY_PERSIST_LIMIT = 200 * 1024;
+
+  let history = $state<HistoryItem[]>(
+    readStore<StoredHistoryItem[]>(HISTORY_KEY, []).map((item) => ({
+      ...item,
+      timestamp: new Date(item.timestamp),
+    })),
+  );
+
+  $effect(() => {
+    writeStore(
+      HISTORY_KEY,
+      history
+        .filter((item) => item.size <= HISTORY_PERSIST_LIMIT)
+        .slice(0, 20)
+        .map((item) => ({ ...item, timestamp: item.timestamp.getTime() })),
+    );
+  });
   let structLanguage = $state("go");
   let viewMode = $state<"editor" | "tree">("editor");
   let collapsedPaths = $state<Set<string>>(new Set());
   let parsedJson = $state<unknown>(null);
   let isFullscreen = $state(false);
   let splitRatio = $state(50); // 左右分割比例
+  let editorsContainerEl = $state<HTMLDivElement | null>(null);
+  let draggingSplit = $state(false);
+
+  // 旧版这里只渲染了一根分隔条，splitRatio 从未被修改，实际拖不动
+  function startSplitDrag(event: PointerEvent) {
+    draggingSplit = true;
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  }
+
+  function onSplitDrag(event: PointerEvent) {
+    if (!draggingSplit || !editorsContainerEl) return;
+    const rect = editorsContainerEl.getBoundingClientRect();
+    const ratio = ((event.clientX - rect.left) / rect.width) * 100;
+    splitRatio = Math.min(80, Math.max(20, ratio));
+  }
+
+  function endSplitDrag(event: PointerEvent) {
+    if (!draggingSplit) return;
+    draggingSplit = false;
+    (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
+  }
+
+  function onSplitKeydown(event: KeyboardEvent) {
+    if (event.key === "ArrowLeft") splitRatio = Math.max(20, splitRatio - 2);
+    else if (event.key === "ArrowRight") splitRatio = Math.min(80, splitRatio + 2);
+    else return;
+    event.preventDefault();
+  }
   let inputTextarea = $state<HTMLTextAreaElement | null>(null);
   let lineNumbersEl = $state<HTMLDivElement | null>(null);
   let highlightLayerEl = $state<HTMLDivElement | null>(null);
@@ -892,15 +953,6 @@
     return matches;
   }
 
-  function escapeHtml(value: string): string {
-    return value
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
-  }
-
   function renderHighlightedInput(): string {
     if (!jsonInput) return "";
     if (!searchMatches.length) return escapeHtml(jsonInput);
@@ -1262,14 +1314,6 @@
     downloadBlob(new Blob([text], { type: "text/plain;charset=utf-8" }), `output.${ext}`);
   }
 
-  async function copyToClipboard(text: string, type: string) {
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      copied = type;
-      setTimeout(() => copied = null, 1500);
-    } catch (err) { console.error("复制失败:", err); }
-  }
 
   function clearAll() {
     cancelScheduledProcess();
@@ -1451,30 +1495,25 @@
   });
 </script>
 
-<div class="json-tool" class:fullscreen={isFullscreen}>
-  <!-- 工具栏 -->
+<div class="tool" class:fullscreen={isFullscreen}>
   <div class="toolbar">
-    <div class="toolbar-left">
-      {#each modes as mode}
-        <button class="mode-btn" class:active={activeMode === mode.id} onclick={() => handleModeClick(mode.id)}>
-          <span class="mode-icon">{mode.icon}</span>
-          <span class="mode-name">{mode.name}</span>
-    </button>
-      {/each}
-    </div>
-    <div class="toolbar-right">
-      <button class="toolbar-btn" onclick={loadExample}>📋 Demo</button>
-      <button class="toolbar-btn" onclick={clearAll}>🗑️ 清空</button>
-      <button class="toolbar-btn" onclick={toggleFullscreen} title={isFullscreen ? '退出全屏' : '全屏'}>
-        {isFullscreen ? '⤓' : '⤢'}
-    </button>
-    </div>
+    <Tabs
+      value={activeMode}
+      tabs={modes.map((mode) => ({ value: mode.id, label: mode.name, icon: mode.icon }))}
+      ariaLabel="处理模式"
+      onchange={handleModeClick}
+    />
+    <div class="spacer"></div>
+    <Button size="sm" onclick={loadExample}>Demo</Button>
+    <Button size="sm" variant="ghost" onclick={clearAll}>清空</Button>
+    <Button size="sm" variant="ghost" icon onclick={toggleFullscreen} ariaLabel={isFullscreen ? "退出全屏" : "全屏"}>
+      {isFullscreen ? "⤓" : "⤢"}
+    </Button>
   </div>
 
-  <!-- 选项栏 -->
-  <div class="options-bar">
-    <div class="search-box">
-      <label class="search-label" for={searchInputId}>搜索:</label>
+  <div class="options">
+    <div class="search">
+      <label for={searchInputId}>搜索</label>
       <input
         id={searchInputId}
         type="text"
@@ -1483,125 +1522,159 @@
         oninput={handleSearchInput}
         onkeydown={handleSearchKeydown}
       />
-      <span class="search-status">{searchMatches.length > 0 ? `${activeSearchIndex + 1}/${searchMatches.length}` : (searchQuery.trim() ? '0/0' : '')}</span>
-      <button type="button" class="search-nav-btn" onclick={() => navigateSearchMatch(-1)} disabled={searchMatches.length <= 1} aria-label="上一个匹配">↑</button>
-      <button type="button" class="search-nav-btn" onclick={() => navigateSearchMatch(1)} disabled={searchMatches.length <= 1} aria-label="下一个匹配">↓</button>
+      <span class="hits">
+        {searchMatches.length > 0 ? `${activeSearchIndex + 1}/${searchMatches.length}` : searchQuery.trim() ? "0/0" : ""}
+      </span>
+      <button class="nav" onclick={() => navigateSearchMatch(-1)} disabled={searchMatches.length <= 1} aria-label="上一个匹配">↑</button>
+      <button class="nav" onclick={() => navigateSearchMatch(1)} disabled={searchMatches.length <= 1} aria-label="下一个匹配">↓</button>
     </div>
-    <div class="option-group">
-      <label for={indentSelectId}>缩进:</label>
+
+    <label class="opt">
+      <span>缩进</span>
       <select id={indentSelectId} bind:value={indentSize} onchange={processJson}>
-        <option value={2}>2空格</option>
-        <option value={4}>4空格</option>
+        <option value={2}>2 空格</option>
+        <option value={4}>4 空格</option>
       </select>
-    </div>
-    {#if activeMode === 'struct'}
-      <div class="option-group">
-        <label for={structLanguageSelectId}>语言:</label>
+    </label>
+
+    {#if activeMode === "struct"}
+      <label class="opt">
+        <span>语言</span>
         <select id={structLanguageSelectId} bind:value={structLanguage} onchange={processJson}>
-          {#each structLanguages as lang}
+          {#each structLanguages as lang (lang.id)}
             <option value={lang.id}>{lang.name}</option>
           {/each}
         </select>
-      </div>
+      </label>
     {/if}
-    {#if activeMode === 'convert'}
-      <div class="option-group">
-        <label for="json-convert-from">从:</label>
-        <select id="json-convert-from" bind:value={convertFrom} onchange={processJson}>
-          {#each dataFormats as f}<option value={f.id}>{f.name}</option>{/each}
+
+    {#if activeMode === "convert"}
+      <label class="opt">
+        <span>从</span>
+        <select bind:value={convertFrom} onchange={processJson}>
+          {#each dataFormats as f (f.id)}<option value={f.id}>{f.name}</option>{/each}
         </select>
-      </div>
-      <div class="option-group">
-        <label for="json-convert-to">到:</label>
-        <select id="json-convert-to" bind:value={convertTo} onchange={processJson}>
-          {#each dataFormats as f}<option value={f.id}>{f.name}</option>{/each}
+      </label>
+      <label class="opt">
+        <span>到</span>
+        <select bind:value={convertTo} onchange={processJson}>
+          {#each dataFormats as f (f.id)}<option value={f.id}>{f.name}</option>{/each}
         </select>
-      </div>
+      </label>
     {/if}
-    {#if activeMode === 'schema'}
-      <div class="view-toggle">
-        <button class="view-btn" class:active={schemaMode === 'generate'} onclick={() => { schemaMode = 'generate'; processJson(); }}>生成 Schema</button>
-        <button class="view-btn" class:active={schemaMode === 'validate'} onclick={() => { schemaMode = 'validate'; processJson(); }}>校验数据</button>
-      </div>
+
+    {#if activeMode === "schema"}
+      <Tabs
+        value={schemaMode}
+        size="sm"
+        tabs={[
+          { value: "generate", label: "生成 Schema" },
+          { value: "validate", label: "校验数据" },
+        ]}
+        ariaLabel="Schema 模式"
+        onchange={(value) => {
+          schemaMode = value as typeof schemaMode;
+          processJson();
+        }}
+      />
     {/if}
-    {#if activeMode === 'query'}
-      <div class="view-toggle">
-        <button class="view-btn" class:active={queryEngine === 'jsonpath'} onclick={() => queryEngine = 'jsonpath'}>JSONPath</button>
-        <button class="view-btn" class:active={queryEngine === 'jq'} onclick={() => queryEngine = 'jq'}>jq</button>
-      </div>
+
+    {#if activeMode === "query"}
+      <Tabs
+        bind:value={queryEngine}
+        size="sm"
+        tabs={[
+          { value: "jsonpath", label: "JSONPath" },
+          { value: "jq", label: "jq" },
+        ]}
+        ariaLabel="查询引擎"
+      />
     {/if}
-    <label class="checkbox-option">
+
+    <label class="check">
       <input type="checkbox" bind:checked={sortKeys} onchange={processJson} />
-      <span>排序键名</span>
+      排序键名
     </label>
-    <label class="checkbox-option">
+    <label class="check">
       <input type="checkbox" bind:checked={showStats} onchange={processJson} />
-      <span>统计</span>
+      统计
     </label>
-    <div class="view-toggle">
-      <button class="view-btn" class:active={viewMode === 'editor'} onclick={() => viewMode = 'editor'}>📝 编辑器</button>
-      <button class="view-btn" class:active={viewMode === 'tree'} onclick={() => viewMode = 'tree'} disabled={!parsedJson}>🌲 树形</button>
-    </div>
-    {#if viewMode === 'tree' && parsedJson}
-      <div class="collapse-controls">
-        <button class="collapse-btn" onclick={expandAll}>展开全部</button>
-        <button class="collapse-btn" onclick={collapseAll}>折叠全部</button>
-        <button class="collapse-btn" onclick={() => collapseToLevel(1)}>折叠1级</button>
-        <button class="collapse-btn" onclick={() => collapseToLevel(2)}>折叠2级</button>
+
+    <div class="spacer"></div>
+
+    <Tabs
+      bind:value={viewMode}
+      size="sm"
+      tabs={[
+        { value: "editor", label: "编辑器" },
+        { value: "tree", label: "树形" },
+      ]}
+      ariaLabel="视图"
+    />
+
+    {#if viewMode === "tree" && parsedJson}
+      <div class="collapse">
+        <Button size="sm" onclick={expandAll}>展开全部</Button>
+        <Button size="sm" onclick={collapseAll}>折叠全部</Button>
+        <Button size="sm" onclick={() => collapseToLevel(1)}>折 1 级</Button>
+        <Button size="sm" onclick={() => collapseToLevel(2)}>折 2 级</Button>
       </div>
     {/if}
   </div>
 
-  <!-- 查询表达式 -->
-  {#if activeMode === 'query'}
-    <div class="jsonpath-bar">
-      <label for={jsonPathInputId}>{queryEngine === 'jq' ? 'jq' : 'JSONPath'}:</label>
+  {#if activeMode === "query"}
+    <div class="query-bar">
+      <label for={jsonPathInputId}>{queryEngine === "jq" ? "jq" : "JSONPath"}</label>
       <input
         id={jsonPathInputId}
         type="text"
-        placeholder={queryEngine === 'jq' ? '.data.items | map(.id) | add' : '$.data.items[*].id'}
+        placeholder={queryEngine === "jq" ? ".data.items | map(.id) | add" : "$.data.items[*].id"}
         bind:value={jsonPath}
         oninput={() => scheduleProcessJson(250)}
       />
     </div>
   {/if}
 
-  <!-- 统计栏 -->
   {#if showStats && jsonStats}
-    <div class="stats-bar">
-      <span class="stat-chip"><b>{jsonStats.totalKeys}</b> 键</span>
-      <span class="stat-chip"><b>{jsonStats.maxDepth}</b> 层</span>
-      <span class="stat-chip"><b>{jsonStats.objectCount}</b> 对象</span>
-      <span class="stat-chip"><b>{jsonStats.arrayCount}</b> 数组</span>
-      <span class="stat-chip"><b>{formatSize(jsonStats.totalSize)}</b></span>
+    <div class="stats">
+      <span><b>{jsonStats.totalKeys}</b> 键</span>
+      <span><b>{jsonStats.maxDepth}</b> 层</span>
+      <span><b>{jsonStats.objectCount}</b> 对象</span>
+      <span><b>{jsonStats.arrayCount}</b> 数组</span>
+      <span><b>{formatSize(jsonStats.totalSize)}</b></span>
     </div>
   {/if}
 
-  <!-- 主编辑区 -->
-  <div class="main-editor">
-    {#if viewMode === 'editor'}
-      <div class="editors-container" style="--split-ratio: {splitRatio}%">
-        <!-- 输入面板 -->
-        <div class="editor-panel input-panel">
-          <div class="editor-header">
-            <span class="editor-title">JSON 输入</span>
-            <span class="editor-info">{jsonInput.length.toLocaleString()} 字符 · {jsonInput.split('\n').length} 行</span>
+  <div class="main">
+    {#if viewMode === "editor"}
+      <div
+        class="editors"
+        class:dragging={draggingSplit}
+        style="--split-ratio: {splitRatio}%"
+        bind:this={editorsContainerEl}
+      >
+        <div class="pane">
+          <div class="pane-head">
+            <span class="pane-title">JSON 输入</span>
+            <span class="pane-info">
+              {jsonInput.length.toLocaleString()} 字符 · {jsonInput.split("\n").length} 行
+            </span>
           </div>
-          <div class="editor-body">
-            <div class="line-numbers" bind:this={lineNumbersEl}>
-              {#each jsonInput.split('\n') as _, i}
-                <div class="line-num" class:error-line={errorInfo?.line === i + 1}>{i + 1}</div>
+          <div class="pane-body">
+            <div class="lines" bind:this={lineNumbersEl}>
+              {#each jsonInput.split("\n") as _, index (index)}
+                <div class="line" class:err={errorInfo?.line === index + 1}>{index + 1}</div>
               {/each}
             </div>
-            <div class="input-editor-stack">
-              <div class="highlight-layer" bind:this={highlightLayerEl} aria-hidden="true">
-                <div class="highlight-content">{@html renderHighlightedInput()}</div>
+            <div class="stack">
+              <div class="highlight" bind:this={highlightLayerEl} aria-hidden="true">
+                <div class="highlight-inner">{@html renderHighlightedInput()}</div>
               </div>
               <textarea
                 bind:value={jsonInput}
                 bind:this={inputTextarea}
-                placeholder="在此粘贴或输入JSON数据...&#10;&#10;支持大型JSON文件，可使用 Tab 键缩进"
-                class="code-textarea input-textarea"
+                placeholder="在此粘贴或输入 JSON 数据…"
+                class="code"
                 spellcheck="false"
                 onkeydown={handleTabKey}
                 onscroll={syncEditorScroll}
@@ -1610,69 +1683,75 @@
           </div>
         </div>
 
-        <!-- 分隔条 -->
-        <div class="resizer" role="separator" aria-orientation="vertical"></div>
+        <button
+          class="resizer"
+          type="button"
+          role="slider"
+          aria-label="拖动调整两栏宽度"
+          aria-valuemin={20}
+          aria-valuemax={80}
+          aria-valuenow={Math.round(splitRatio)}
+          onpointerdown={startSplitDrag}
+          onpointermove={onSplitDrag}
+          onpointerup={endSplitDrag}
+          onpointercancel={endSplitDrag}
+          onkeydown={onSplitKeydown}
+        ></button>
 
-        <!-- 输出面板 / 第二输入 -->
-        <div class="editor-panel output-panel">
-          {#if rightPanelRole === 'inputB'}
-            <div class="editor-header">
-              <span class="editor-title">对比 B</span>
-              <span class="editor-info">{jsonInputB.length.toLocaleString()} 字符 · {jsonInputB.split('\n').length} 行</span>
+        <div class="pane">
+          {#if rightPanelRole === "inputB"}
+            <div class="pane-head">
+              <span class="pane-title">对比 B</span>
+              <span class="pane-info">
+                {jsonInputB.length.toLocaleString()} 字符 · {jsonInputB.split("\n").length} 行
+              </span>
             </div>
-            <div class="editor-body">
+            <div class="pane-body">
               <textarea
                 bind:value={jsonInputB}
                 placeholder="在此粘贴用于对比的第二份内容（JSON 会自动规范化后对比）"
-                class="code-textarea input-textarea"
+                class="code plain"
                 spellcheck="false"
                 oninput={runDiff}
               ></textarea>
             </div>
-          {:else if rightPanelRole === 'schemaInput'}
-            <div class="editor-header">
-              <span class="editor-title">JSON Schema</span>
-              <span class="editor-info">{schemaInput.length.toLocaleString()} 字符</span>
+          {:else if rightPanelRole === "schemaInput"}
+            <div class="pane-head">
+              <span class="pane-title">JSON Schema</span>
+              <span class="pane-info">{schemaInput.length.toLocaleString()} 字符</span>
             </div>
-            <div class="editor-body">
+            <div class="pane-body">
               <textarea
                 bind:value={schemaInput}
                 placeholder={'粘贴 JSON Schema，例如 {"type":"object","required":["name"]}'}
-                class="code-textarea input-textarea"
+                class="code plain"
                 spellcheck="false"
                 oninput={() => scheduleProcessJson(300)}
               ></textarea>
             </div>
           {:else}
-            <div class="editor-header">
-              <span class="editor-title">
-                {activeMode === 'struct'
-                  ? `${structLanguages.find(l => l.id === structLanguage)?.name || ''} 输出`
-                  : activeMode === 'convert'
+            <div class="pane-head">
+              <span class="pane-title">
+                {activeMode === "struct"
+                  ? `${structLanguages.find((l) => l.id === structLanguage)?.name ?? ""} 输出`
+                  : activeMode === "convert"
                     ? `${convertTo.toUpperCase()} 输出`
-                    : activeMode === 'schema'
-                      ? 'Schema 输出'
-                      : 'JSON 输出'}
+                    : activeMode === "schema"
+                      ? "Schema 输出"
+                      : "JSON 输出"}
               </span>
-              <div class="editor-actions">
-                <span class="editor-info">{outputContent.length.toLocaleString()} 字符</span>
-                {#if outputContent}
-                  <button class="copy-btn" onclick={() => copyToClipboard(outputContent, 'output')}>
-                    {copied === 'output' ? '✓ 已复制' : '📋 复制'}
-                  </button>
-                  {#if activeMode === 'struct' || activeMode === 'convert' || (activeMode === 'schema' && schemaMode === 'generate')}
-                    <button class="copy-btn" onclick={downloadOutput}>⬇ 下载</button>
-                  {/if}
-                {/if}
-              </div>
+              <span class="pane-info">{outputContent.length.toLocaleString()} 字符</span>
+              <CopyButton value={() => outputContent} disabled={!outputContent} />
+              {#if outputContent && (activeMode === "struct" || activeMode === "convert" || (activeMode === "schema" && schemaMode === "generate"))}
+                <Button size="sm" variant="ghost" onclick={downloadOutput}>下载</Button>
+              {/if}
             </div>
-            <div class="editor-body output-body">
+            <div class="pane-body">
               <textarea
                 value={outputContent}
-                placeholder={isProcessing ? '处理中...' : '结果将显示在这里...'}
-                class="code-textarea output-textarea"
-                class:struct-output={activeMode === 'struct'}
-                class:success-output={activeMode === 'validate' && jsonOutput.includes('✓')}
+                placeholder={isProcessing ? "处理中…" : "结果将显示在这里…"}
+                class="code plain"
+                class:ok={activeMode === "validate" && jsonOutput.includes("✓")}
                 readonly
                 spellcheck="false"
               ></textarea>
@@ -1680,1178 +1759,750 @@
           {/if}
         </div>
       </div>
-    {:else if viewMode === 'tree' && parsedJson}
-      <!-- 树形视图 -->
-      <div class="tree-view-container">
-        <div class="tree-view">
-          {#snippet renderNode(value: unknown, key: string, path: string, depth: number)}
-            {@const isCollapsed = collapsedPaths.has(path)}
-            {@const isExpandable = value !== null && typeof value === 'object'}
-            {@const childCount = Array.isArray(value) ? value.length : (typeof value === 'object' && value !== null ? Object.keys(value).length : 0)}
-            
-            <div class="tree-node" style="--depth: {depth}">
-              <div class="node-line">
-                {#if isExpandable}
-                  <button class="expand-btn" onclick={() => toggleCollapse(path)}>
-                    {isCollapsed ? '▶' : '▼'}
-                  </button>
-      {:else}
-                  <span class="expand-placeholder"></span>
-      {/if}
-                
-                <span class="node-key">{key}</span>
-                <span class="node-colon">:</span>
-                
-                {#if isExpandable}
-                  <span class="node-type">{getTypeLabel(value)}</span>
-                  {#if isCollapsed}
-                    <span class="collapsed-preview">
-                      {Array.isArray(value) ? '[...]' : '{...}'}
-                    </span>
-                  {/if}
-                {:else}
-                  <span class={getValueClass(value)}>
-                    {#if typeof value === 'string'}
-                      "{value}"
-                    {:else}
-                      {JSON.stringify(value)}
-                    {/if}
-                  </span>
-                {/if}
-                
-                <button class="copy-value-btn" onclick={() => copyToClipboard(JSON.stringify(value), `value-${path}`)} title="复制值">
-                  {copied === `value-${path}` ? '✓' : '📋'}
+    {:else if viewMode === "tree" && parsedJson}
+      <div class="tree">
+        {#snippet renderNode(value: unknown, key: string, path: string, depth: number)}
+          {@const isCollapsed = collapsedPaths.has(path)}
+          {@const isExpandable = value !== null && typeof value === "object"}
+
+          <div class="node" style="--depth: {depth}">
+            <div class="node-line">
+              {#if isExpandable}
+                <button class="expand" onclick={() => toggleCollapse(path)} aria-label={isCollapsed ? "展开" : "折叠"}>
+                  {isCollapsed ? "▶" : "▼"}
                 </button>
-    </div>
-              
-              {#if isExpandable && !isCollapsed}
-                <div class="node-children">
-                  {#if Array.isArray(value)}
-                    {#each value as item, index}
-                      {@render renderNode(item, `[${index}]`, `${path}[${index}]`, depth + 1)}
-                    {/each}
-                  {:else if typeof value === 'object' && value !== null}
-                    {#each Object.entries(value) as [k, v]}
-                      {@render renderNode(v, k, `${path}.${k}`, depth + 1)}
-                    {/each}
-                  {/if}
-  </div>
+              {:else}
+                <span class="expand-space"></span>
               {/if}
+
+              <span class="key">{key}</span><span class="colon">:</span>
+
+              {#if isExpandable}
+                <span class="type">{getTypeLabel(value)}</span>
+                {#if isCollapsed}
+                  <span class="folded">{Array.isArray(value) ? "[ … ]" : "{ … }"}</span>
+                {/if}
+              {:else}
+                <span class={getValueClass(value)}>
+                  {typeof value === "string" ? `"${value}"` : JSON.stringify(value)}
+                </span>
+              {/if}
+
+              <span class="node-copy"><CopyButton value={JSON.stringify(value)} icon title="复制值" /></span>
             </div>
-          {/snippet}
-          
-          {@render renderNode(parsedJson, 'root', '$', 0)}
-        </div>
+
+            {#if isExpandable && !isCollapsed}
+              <div class="children">
+                {#if Array.isArray(value)}
+                  {#each value as item, index (index)}
+                    {@render renderNode(item, `[${index}]`, `${path}[${index}]`, depth + 1)}
+                  {/each}
+                {:else if typeof value === "object" && value !== null}
+                  {#each Object.entries(value) as [childKey, childValue] (childKey)}
+                    {@render renderNode(childValue, childKey, `${path}.${childKey}`, depth + 1)}
+                  {/each}
+                {/if}
+              </div>
+            {/if}
+          </div>
+        {/snippet}
+
+        {@render renderNode(parsedJson, "root", "$", 0)}
       </div>
     {:else}
-      <div class="empty-tree">
-        <p>请先输入有效的 JSON 数据</p>
-      </div>
-  {/if}
+      <EmptyState icon={"{ }"} title="请先输入有效的 JSON 数据" hint="树形视图需要可解析的 JSON" />
+    {/if}
   </div>
 
-  <!-- 错误面板 -->
   {#if errorInfo}
-    <div class="error-panel">
-      <div class="error-header">
-        <span class="error-badge">✕ JSON格式错误</span>
-        <button class="jump-btn" onclick={jumpToErrorLine}>↗ 跳转到错误</button>
+    <div class="err-panel">
+      <div class="err-head">
+        <span class="err-badge">JSON 格式错误</span>
+        <span class="err-loc">第 {errorInfo.line} 行，第 {errorInfo.column} 列</span>
+        <Button size="sm" onclick={jumpToErrorLine}>跳转到错误</Button>
       </div>
-      <div class="error-body">
-        <div class="error-location">第 <strong>{errorInfo.line}</strong> 行，第 <strong>{errorInfo.column}</strong> 列</div>
-        <div class="error-message">{errorInfo.message}</div>
-        {#if errorInfo.lineContent}
-          <div class="error-code-box">
-            <div class="error-line-num">{errorInfo.line}</div>
-            <div class="error-line-content">
-              <code>{errorInfo.lineContent}</code>
-              <div class="error-pointer">{getErrorPointer(errorInfo.column)}</div>
-            </div>
+      <p class="err-msg">{errorInfo.message}</p>
+      {#if errorInfo.lineContent}
+        <div class="err-code">
+          <span class="err-no">{errorInfo.line}</span>
+          <div>
+            <code>{errorInfo.lineContent}</code>
+            <div class="pointer">{getErrorPointer(errorInfo.column)}</div>
           </div>
-        {/if}
-        {#if errorInfo.expected.length > 0}
-          <div class="error-expect">
-            <span class="expect-label">期望</span>
-            {#each errorInfo.expected as exp, i}
-              <code class="token-good">{exp}</code>{i < errorInfo.expected.length - 1 ? ',' : ''}
-            {/each}
-            <span class="found-label">实际</span>
-            <code class="token-bad">{errorInfo.found}</code>
-          </div>
-        {/if}
-      </div>
-    </div>
-  {/if}
-
-  <!-- 后端处理错误（convert / schema / query） -->
-  {#if backendError}
-    <div class="backend-error">⚠️ {backendError}</div>
-  {/if}
-
-  <!-- Diff 结果 -->
-  {#if activeMode === 'diff' && diffResult}
-    <div class="diff-result">
-      <div class="diff-summary">
-        <span class="diff-stat add">+{diffResult.added}</span>
-        <span class="diff-stat del">-{diffResult.removed}</span>
-        <span class="diff-stat chg">~{diffResult.changed}</span>
-        <span class="diff-hint">{diffResult.added + diffResult.removed + diffResult.changed === 0 ? '两侧内容一致' : '左为 A，右为 B'}</span>
-      </div>
-      <div class="diff-rows">
-        {#each diffResult.rows as row}
-          <div class="diff-row {row.type}">
-            <span class="diff-ln">{row.leftNo ?? ''}</span>
-            <span class="diff-cell left">{row.left}</span>
-            <span class="diff-ln">{row.rightNo ?? ''}</span>
-            <span class="diff-cell right">{row.right}</span>
-          </div>
-        {/each}
-      </div>
-    </div>
-  {/if}
-
-  <!-- Schema 校验结果 -->
-  {#if activeMode === 'schema' && schemaMode === 'validate' && schemaResult}
-    <div class="schema-result">
-      {#if schemaResult.valid}
-        <div class="schema-ok">✓ 数据符合 Schema</div>
-      {:else}
-        <div class="schema-fail">✕ 共 {schemaResult.errors.length} 处不符合：</div>
-        <div class="schema-errors">
-          {#each schemaResult.errors as err}
-            <div class="schema-err-item">
-              <code class="schema-err-path">{err.path}</code>
-              <span class="schema-err-msg">{err.message}</span>
-            </div>
-          {/each}
         </div>
+      {/if}
+      {#if errorInfo.expected.length > 0}
+        <p class="err-expect">
+          期望
+          {#each errorInfo.expected as exp, index (exp)}
+            <code class="good">{exp}</code>{index < errorInfo.expected.length - 1 ? "、" : ""}
+          {/each}
+          ，实际 <code class="bad">{errorInfo.found}</code>
+        </p>
       {/if}
     </div>
   {/if}
 
-  <!-- 查询结果 -->
-  {#if activeMode === 'query' && jsonPathResult}
-    <div class="jsonpath-result">
-      <span class="result-label">查询结果:</span>
-      <pre>{jsonPathResult}</pre>
-      <button class="copy-btn-small" onclick={() => copyToClipboard(jsonPathResult, 'path')}>
-        {copied === 'path' ? '✓' : '📋'}
-      </button>
+  {#if backendError}
+    <p class="backend-err">{backendError}</p>
+  {/if}
+
+  {#if activeMode === "diff" && diffResult}
+    <DiffView result={diffResult} leftTitle="A" rightTitle="B" maxHeight="38vh" />
+  {/if}
+
+  {#if activeMode === "schema" && schemaMode === "validate" && schemaResult}
+    <div class="schema">
+      {#if schemaResult.valid}
+        <p class="schema-ok">✓ 数据符合 Schema</p>
+      {:else}
+        <p class="schema-fail">✕ 共 {schemaResult.errors.length} 处不符合</p>
+        <ul>
+          {#each schemaResult.errors as err, index (index)}
+            <li><code>{err.path}</code><span>{err.message}</span></li>
+          {/each}
+        </ul>
+      {/if}
     </div>
   {/if}
 
-  <!-- 历史记录 -->
-  {#if history.length > 0}
-    <div class="history-section">
-      <div class="history-header">
-        <span class="history-title">📜 历史记录 ({history.length}/20)</span>
-        <button class="clear-history-btn" onclick={clearHistory}>清空</button>
+  {#if activeMode === "query" && jsonPathResult}
+    <div class="query-result">
+      <div class="qr-head">
+        <span>查询结果</span>
+        <CopyButton value={() => jsonPathResult} />
       </div>
-      <div class="history-list">
-        {#each history as item}
-          <div class="history-item" role="button" tabindex="0" onclick={() => loadFromHistory(item)} onkeydown={(e) => handleHistoryKeydown(e, item)}>
-            <span class="history-preview">{item.preview}</span>
-            <span class="history-meta">{formatTime(item.timestamp)} · {formatSize(item.size)}</span>
-            <button type="button" class="history-delete" aria-label="删除历史记录" onclick={(e) => deleteHistory(item.id, e)}>×</button>
-          </div>
-        {/each}
-      </div>
+      <pre>{jsonPathResult}</pre>
     </div>
+  {/if}
+
+  {#if history.length > 0}
+    <details class="history">
+      <summary>历史记录（{history.length}/20）</summary>
+      <div class="hist-body">
+        <div class="hist-actions">
+          <Button size="sm" variant="ghost" onclick={clearHistory}>清空历史</Button>
+        </div>
+        <ul>
+          {#each history as item (item.id)}
+            <li>
+              <button class="hist-item" onclick={() => loadFromHistory(item)}>
+                <span class="hist-preview">{item.preview}</span>
+                <span class="hist-meta">{formatTime(item.timestamp)} · {formatSize(item.size)}</span>
+              </button>
+              <button class="hist-del" onclick={(e) => deleteHistory(item.id, e)} aria-label="删除这条历史">×</button>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    </details>
   {/if}
 </div>
 
 <style>
-  .json-tool {
-    --json-editor-font-size: 0.85rem;
-    --json-editor-line-height: 1.5;
-    --json-editor-row-height: calc(var(--json-editor-font-size) * var(--json-editor-line-height));
+  .tool {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    height: 100%;
-    min-height: 600px;
+    gap: var(--sp-2);
+    flex: 1;
+    min-height: 0;
   }
 
-  .json-tool.fullscreen {
+  .tool.fullscreen {
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 1000;
-    background: var(--bg-darker);
-    padding: 1rem;
-    min-height: 100vh;
+    inset: 0;
+    z-index: var(--z-overlay);
+    padding: var(--sp-4);
+    background: var(--color-bg);
   }
 
-  /* 工具栏 */
-  .toolbar {
+  .toolbar,
+  .options {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: 0.4rem;
-    background: var(--bg-dark);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: var(--sp-2);
   }
 
-  .toolbar-left, .toolbar-right {
-    display: flex;
-    gap: 0.25rem;
-    flex-wrap: wrap;
+  .spacer {
+    flex: 1;
   }
 
-  .mode-btn {
+  .search {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
-    padding: 0.4rem 0.6rem !important;
-    background: transparent !important;
-    border: 1px solid transparent !important;
-    color: var(--text-secondary) !important;
-    font-size: 0.8rem;
-  }
-
-  .mode-btn:hover {
-    background: var(--bg-hover) !important;
-    color: var(--text-primary) !important;
-    transform: none !important;
-  }
-
-  .mode-btn.active {
-    background: var(--primary) !important;
-    color: white !important;
-  }
-
-  .mode-icon {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    font-weight: 700;
-  }
-
-  .toolbar-btn {
-    padding: 0.4rem 0.6rem !important;
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    font-size: 0.8rem;
-  }
-
-  .toolbar-btn:hover {
-    border-color: var(--primary) !important;
-    transform: none !important;
-  }
-
-  /* 选项栏 */
-  .options-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.4rem 0.6rem;
-    background: var(--bg-dark);
-    border: 1px solid var(--border);
+    gap: var(--sp-2);
+    padding: 0 var(--sp-2);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
-    flex-wrap: wrap;
+    background: var(--color-bg);
   }
 
-  .option-group {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
+  .search label {
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
   }
 
-  .option-group label {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-  }
-
-  .option-group select {
-    padding: 0.25rem 1.5rem 0.25rem 0.4rem;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text-primary);
-    font-size: 0.8rem;
-    cursor: pointer;
-    appearance: none;
-    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
-    background-repeat: no-repeat;
-    background-position: right 0.2rem center;
-    background-size: 0.7em;
-  }
-
-  .option-group select option {
-    background: #1a1a2e;
-    color: #e4e4e7;
-  }
-
-  .checkbox-option {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-
-  .checkbox-option input {
-    width: 14px;
-    height: 14px;
-  }
-
-  .view-toggle {
-    display: flex;
-    gap: 0.25rem;
-    margin-left: auto;
-  }
-
-  .view-btn {
-    padding: 0.3rem 0.5rem !important;
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    font-size: 0.75rem;
-  }
-
-  .view-btn:hover:not(:disabled) {
-    border-color: var(--primary) !important;
-    transform: none !important;
-  }
-
-  .view-btn.active {
-    background: var(--primary) !important;
-    color: white !important;
-    border-color: var(--primary) !important;
-  }
-
-  .view-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .collapse-controls {
-    display: flex;
-    gap: 0.25rem;
-  }
-
-  .collapse-btn {
-    padding: 0.2rem 0.4rem !important;
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    font-size: 0.7rem;
-    color: var(--text-muted) !important;
-  }
-
-  .collapse-btn:hover {
-    color: var(--text-primary) !important;
-    border-color: var(--accent) !important;
-    transform: none !important;
-  }
-
-  .search-box {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    min-width: 240px;
-  }
-
-  .search-box input {
-    padding: 0.3rem 0.5rem !important;
-    width: 180px;
-    font-size: 0.8rem !important;
-    background: var(--bg-card) !important;
-  }
-
-  .search-label {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-  }
-
-  .search-status {
-    min-width: 2.75rem;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    text-align: center;
-  }
-
-  .search-nav-btn {
-    padding: 0.2rem 0.45rem !important;
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    font-size: 0.75rem;
-    line-height: 1;
-  }
-
-  .search-nav-btn:hover:not(:disabled) {
-    border-color: var(--primary) !important;
-    transform: none !important;
-  }
-
-  .search-nav-btn:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-
-  /* JSONPath栏 */
-  .jsonpath-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.6rem;
-    background: var(--bg-dark);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-  }
-
-  .jsonpath-bar label {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-  }
-
-  .jsonpath-bar input {
-    flex: 1;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.85rem !important;
-    padding: 0.35rem 0.5rem !important;
-  }
-
-  /* 统计栏 */
-  .stats-bar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem;
-    padding: 0.3rem 0.6rem;
-    background: var(--bg-dark);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-  }
-
-  .stat-chip {
-    padding: 0.15rem 0.4rem;
-    background: var(--bg-card);
-    border-radius: 4px;
-    font-size: 0.7rem;
-    color: var(--text-muted);
-  }
-
-  .stat-chip b {
-    color: var(--accent);
-  }
-
-  /* 主编辑区 */
-  .main-editor {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .editors-container {
-    display: grid;
-    grid-template-columns: var(--split-ratio, 50%) 6px calc(100% - var(--split-ratio, 50%) - 6px);
-    gap: 0;
-    flex: 1;
-    min-height: 400px;
-  }
-
-  .resizer {
-    background: var(--border);
-    cursor: col-resize;
-    transition: background 0.2s;
-  }
-
-  .resizer:hover {
-    background: var(--primary);
-  }
-
-  .editor-panel {
-    display: flex;
-    flex-direction: column;
-    background: var(--bg-dark);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-    min-width: 200px;
-  }
-
-  .editor-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.4rem 0.6rem;
-    background: var(--bg-card);
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-
-  .editor-title {
-    font-size: 0.8rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-  }
-
-  .editor-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-
-  .editor-info {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-  }
-
-  .copy-btn {
-    padding: 0.2rem 0.4rem !important;
-    background: var(--bg-hover) !important;
-    border: 1px solid var(--border) !important;
-    font-size: 0.75rem;
-  }
-
-  .copy-btn:hover {
-    border-color: var(--primary) !important;
-    transform: none !important;
-  }
-
-  .editor-body {
-    display: flex;
-    flex: 1;
-    overflow: hidden;
-    min-height: 0;
-  }
-
-  .line-numbers {
-    padding: 0.5rem 0;
-    background: rgba(0, 0, 0, 0.2);
-    border-right: 1px solid var(--border);
-    text-align: right;
-    user-select: none;
-    min-width: 40px;
-    overflow: hidden;
-    flex-shrink: 0;
-  }
-
-  .line-num {
-    box-sizing: border-box;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    min-height: var(--json-editor-row-height);
-    padding: 0 0.4rem;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: var(--json-editor-font-size);
-    line-height: var(--json-editor-line-height);
-    color: var(--text-muted);
-  }
-
-  .line-num.error-line {
-    background: rgba(239, 68, 68, 0.3);
-    color: #f87171;
-    font-weight: bold;
-  }
-
-  .code-textarea {
-    box-sizing: border-box;
-    flex: 1;
-    padding: 0.5rem;
-    border: none !important;
-    background: transparent !important;
-    color: var(--text-primary);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: var(--json-editor-font-size);
-    line-height: var(--json-editor-line-height);
-    resize: none;
-    min-height: 100%;
-  }
-
-  .code-textarea:focus {
+  .search input {
+    width: 11rem;
+    background: none;
+    border: none;
     outline: none;
-    box-shadow: none !important;
+    color: var(--color-text);
+    padding: 0.3rem 0;
+    font-size: var(--fs-sm);
   }
 
-  .input-editor-stack {
+  .hits {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+    min-width: 2.4rem;
+    text-align: right;
+  }
+
+  .nav {
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--fs-xs);
+  }
+
+  .nav:hover:not(:disabled) {
+    background: var(--color-surface-2);
+    color: var(--color-text);
+  }
+
+  .nav:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .opt,
+  .check {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+  }
+
+  .check input {
+    accent-color: var(--color-primary);
+  }
+
+  select {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    padding: 0.25rem var(--sp-2);
+    font-size: var(--fs-sm);
+  }
+
+  .collapse {
+    display: flex;
+    gap: var(--sp-1);
+  }
+
+  .query-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+  }
+
+  .query-bar label {
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    color: var(--color-accent);
+  }
+
+  .query-bar input {
+    flex: 1;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    padding: 0.3rem var(--sp-2);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+  }
+
+  .stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+  }
+
+  .stats span {
+    padding: 0.15rem var(--sp-2);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-2);
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+  }
+
+  .stats b {
+    font-family: var(--font-mono);
+    color: var(--color-text);
+  }
+
+  .main {
+    flex: 1;
+    min-height: 320px;
+    display: flex;
+  }
+
+  .editors {
+    flex: 1;
+    display: grid;
+    grid-template-columns: var(--split-ratio) auto 1fr;
+    gap: var(--sp-2);
+    min-height: 0;
+  }
+
+  .pane {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    overflow: hidden;
+  }
+
+  .pane-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    height: 36px;
+    padding: 0 var(--sp-3);
+    border-bottom: 1px solid var(--color-border);
+    flex-shrink: 0;
+  }
+
+  .pane-title {
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
+    color: var(--color-text);
+    white-space: nowrap;
+  }
+
+  .pane-info {
+    flex: 1;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .pane-body {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    background: var(--color-code-bg);
+  }
+
+  .lines {
+    flex-shrink: 0;
+    padding: var(--sp-2) var(--sp-1) var(--sp-2) var(--sp-2);
+    border-right: 1px solid var(--color-border);
+    background: var(--color-surface-2);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    line-height: 1.6;
+    color: var(--color-text-muted);
+    text-align: right;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  .line.err {
+    color: var(--color-danger);
+    font-weight: var(--fw-bold);
+  }
+
+  .stack {
     position: relative;
     flex: 1;
     min-width: 0;
-    min-height: 0;
-    overflow: hidden;
   }
 
-  .highlight-layer,
-  .input-textarea {
+  .highlight {
     position: absolute;
     inset: 0;
-    width: 100%;
-    height: 100%;
-  }
-
-  .highlight-layer {
     overflow: hidden;
     pointer-events: none;
-    padding: 0.5rem;
-    background: transparent;
   }
 
-  .highlight-content {
-    min-height: 100%;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: var(--json-editor-font-size);
-    line-height: var(--json-editor-line-height);
-    color: var(--text-primary);
+  .highlight-inner,
+  .code {
+    padding: var(--sp-2);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    line-height: 1.6;
     white-space: pre-wrap;
     word-break: break-word;
-    overflow-wrap: anywhere;
   }
 
-  .input-textarea {
-    z-index: 1;
+  .code {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    border: none;
+    outline: none;
+    resize: none;
+    color: var(--color-text);
+    caret-color: var(--color-primary);
+  }
+
+  .code.plain {
+    position: static;
+  }
+
+  .code.ok {
+    color: var(--color-success);
+  }
+
+  .code::placeholder {
+    color: var(--color-text-muted);
+  }
+
+  /* @html 注入的搜索高亮不受 scoped 样式影响 */
+  .highlight-inner :global(mark) {
+    background: var(--color-highlight-bg);
     color: transparent;
-    caret-color: var(--text-primary);
-    background: transparent !important;
+    border-radius: 2px;
   }
 
-  .input-textarea::placeholder {
-    color: var(--text-muted);
+  .highlight-inner :global(mark.active) {
+    background: var(--color-primary);
   }
 
-  .highlight-content :global(.search-highlight) {
-    background: rgba(250, 204, 21, 0.35);
-    border-radius: 3px;
-    color: inherit;
-    padding: 0;
+  .resizer {
+    width: 5px;
+    border-radius: var(--radius-full);
+    background: transparent;
+    cursor: col-resize;
+    transition: background var(--motion);
   }
 
-  .highlight-content :global(.search-highlight.active) {
-    background: rgba(249, 115, 22, 0.55);
-    box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.45);
+  .resizer:hover,
+  .editors.dragging .resizer {
+    background: var(--color-primary);
   }
 
-  .output-body {
-    background: var(--bg-card);
-  }
-
-  .output-textarea {
-    color: var(--accent);
-  }
-
-  .output-textarea.struct-output {
-    color: #22c55e;
-  }
-
-  .output-textarea.success-output {
-    color: var(--accent-green);
-    font-size: 1.1rem;
-    text-align: center;
-  }
-
-  /* 树形视图 */
-  .tree-view-container {
+  .tree {
     flex: 1;
-    background: var(--bg-dark);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    min-height: 0;
     overflow: auto;
-    min-height: 400px;
-  }
-
-  .tree-view {
-    padding: 0.75rem;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.85rem;
-  }
-
-  .tree-node {
-    margin-left: calc(var(--depth, 0) * 1.2rem);
+    padding: var(--sp-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-code-bg);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
   }
 
   .node-line {
     display: flex;
     align-items: center;
-    gap: 0.3rem;
-    padding: 0.15rem 0;
-    border-radius: 4px;
-    transition: background 0.15s;
+    gap: var(--sp-1);
+    padding: 1px 0;
+    padding-left: calc(var(--depth) * 1.1rem);
+    border-radius: var(--radius-sm);
   }
 
   .node-line:hover {
-    background: var(--bg-hover);
+    background: var(--color-surface-2);
   }
 
-  .expand-btn {
-    width: 1.2rem;
-    height: 1.2rem;
-    padding: 0 !important;
-    background: transparent !important;
-    border: none !important;
-    color: var(--text-muted) !important;
-    font-size: 0.7rem;
-    cursor: pointer;
+  .expand,
+  .expand-space {
+    width: 14px;
+    flex-shrink: 0;
+    font-size: 0.6rem;
+    color: var(--color-text-muted);
+  }
+
+  .key {
+    color: var(--color-accent);
+  }
+
+  .colon {
+    color: var(--color-text-muted);
+    margin-right: var(--sp-1);
+  }
+
+  .type {
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+  }
+
+  .folded {
+    color: var(--color-text-muted);
+  }
+
+  .node-copy {
+    opacity: 0;
+    transition: opacity var(--motion);
+  }
+
+  .node-line:hover .node-copy {
+    opacity: 1;
+  }
+
+  .err-panel {
+    padding: var(--sp-3);
+    border: 1px solid var(--color-danger-border);
+    border-radius: var(--radius);
+    background: var(--color-danger-bg);
+  }
+
+  .err-head {
     display: flex;
     align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+    gap: var(--sp-3);
   }
 
-  .expand-btn:hover {
-    color: var(--primary) !important;
-    transform: none !important;
+  .err-badge {
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
+    color: var(--color-danger);
   }
 
-  .expand-placeholder {
-    width: 1.2rem;
-    flex-shrink: 0;
+  .err-loc {
+    flex: 1;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--color-text-secondary);
   }
 
-  .node-key {
-    color: #f472b6;
-    font-weight: 500;
+  .err-msg {
+    margin-top: var(--sp-2);
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
   }
 
-  .node-colon {
-    color: var(--text-muted);
+  .err-code {
+    display: flex;
+    gap: var(--sp-2);
+    margin-top: var(--sp-2);
+    padding: var(--sp-2);
+    border-radius: var(--radius-sm);
+    background: var(--color-code-bg);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
   }
 
-  .node-type {
-    color: var(--text-muted);
-    font-size: 0.75rem;
-    padding: 0.1rem 0.3rem;
-    background: var(--bg-card);
+  .err-no {
+    color: var(--color-text-muted);
+  }
+
+  .err-code code {
+    color: var(--color-text);
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .pointer {
+    color: var(--color-danger);
+    white-space: pre;
+  }
+
+  .err-expect {
+    margin-top: var(--sp-2);
+    font-size: var(--fs-xs);
+    color: var(--color-text-secondary);
+  }
+
+  .err-expect code {
+    font-family: var(--font-mono);
+    padding: 0 0.25rem;
     border-radius: 3px;
   }
 
-  .collapsed-preview {
-    color: var(--text-muted);
-    font-style: italic;
+  .err-expect .good {
+    color: var(--color-success);
+    background: var(--color-success-bg);
   }
 
-  .json-null { color: #f87171; }
-  .json-string { color: #a3e635; }
-  .json-number { color: #60a5fa; }
-  .json-boolean { color: #c084fc; }
-
-  .copy-value-btn {
-    padding: 0.1rem 0.2rem !important;
-    background: transparent !important;
-    border: none !important;
-    font-size: 0.7rem;
-    opacity: 0;
-    transition: opacity 0.15s;
+  .err-expect .bad {
+    color: var(--color-danger);
+    background: var(--color-danger-bg);
   }
 
-  .node-line:hover .copy-value-btn {
-    opacity: 1;
-  }
-
-  .copy-value-btn:hover {
-    transform: none !important;
-  }
-
-  .node-children {
-    border-left: 1px dashed var(--border);
-    margin-left: 0.6rem;
-    padding-left: 0.3rem;
-  }
-
-  .empty-tree {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-    background: var(--bg-dark);
-    border: 1px solid var(--border);
+  .backend-err {
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid var(--color-warning-border);
     border-radius: var(--radius-sm);
-    min-height: 400px;
+    background: var(--color-warning-bg);
+    color: var(--color-text-secondary);
+    font-size: var(--fs-sm);
   }
 
-  /* 错误面板 */
-  .error-panel {
-    background: var(--bg-dark);
-    border: 1px solid rgba(239, 68, 68, 0.4);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
+  .schema {
+    padding: var(--sp-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
   }
 
-  .error-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.5rem 0.6rem;
-    background: rgba(239, 68, 68, 0.15);
-    border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+  .schema-ok {
+    color: var(--color-success);
+    font-size: var(--fs-sm);
   }
 
-  .error-badge {
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: #f87171;
+  .schema-fail {
+    color: var(--color-danger);
+    font-size: var(--fs-sm);
+    margin-bottom: var(--sp-2);
   }
 
-  .jump-btn {
-    padding: 0.25rem 0.5rem !important;
-    background: transparent !important;
-    border: 1px solid rgba(239, 68, 68, 0.4) !important;
-    color: #f87171 !important;
-    font-size: 0.75rem;
-  }
-
-  .jump-btn:hover {
-    background: rgba(239, 68, 68, 0.1) !important;
-    transform: none !important;
-  }
-
-  .error-body {
-    padding: 0.6rem;
+  .schema ul {
+    list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--sp-1);
+    max-height: 220px;
+    overflow-y: auto;
   }
 
-  .error-location {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-  }
-
-  .error-location strong {
-    color: #f87171;
-    font-weight: 700;
-  }
-
-  .error-message {
-    font-size: 0.85rem;
-    color: var(--text-primary);
-  }
-
-  .error-code-box {
+  .schema li {
     display: flex;
-    background: #1a1a2e;
-    border-radius: 6px;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    font-family: 'JetBrains Mono', monospace;
-  }
-
-  .error-line-num {
-    padding: 0.4rem 0.5rem;
-    background: rgba(239, 68, 68, 0.2);
-    color: #f87171;
-    font-size: 0.75rem;
-    font-weight: 600;
-    border-right: 1px solid var(--border);
-    min-width: 32px;
-    text-align: center;
-  }
-
-  .error-line-content {
-    flex: 1;
-    padding: 0.4rem 0.6rem;
-    overflow-x: auto;
-  }
-
-  .error-line-content code {
-    display: block;
-    font-size: 0.8rem;
-    color: var(--text-primary);
-    white-space: pre;
-    background: transparent !important;
-    padding: 0 !important;
-  }
-
-  .error-pointer {
-    font-size: 0.8rem;
-    color: #f87171;
-    font-weight: bold;
-    white-space: pre;
-  }
-
-  .error-expect {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.3rem;
-    font-size: 0.8rem;
-    padding: 0.4rem 0.6rem;
-    background: var(--bg-card);
-    border-radius: 6px;
-  }
-
-  .expect-label, .found-label {
-    color: var(--text-muted);
-  }
-
-  .token-good {
-    padding: 0.1rem 0.3rem;
-    background: rgba(16, 185, 129, 0.15);
-    border: 1px solid rgba(16, 185, 129, 0.3);
-    border-radius: 4px;
-    font-size: 0.7rem;
-    color: #10b981;
-  }
-
-  .token-bad {
-    padding: 0.1rem 0.3rem;
-    background: rgba(239, 68, 68, 0.15);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    border-radius: 4px;
-    font-size: 0.7rem;
-    color: #f87171;
-  }
-
-  /* JSONPath结果 */
-  .jsonpath-result {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.6rem;
-    padding: 0.6rem;
-    background: var(--bg-dark);
-    border: 1px solid var(--border);
+    gap: var(--sp-3);
+    padding: var(--sp-1) var(--sp-2);
     border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+    font-size: var(--fs-sm);
   }
 
-  .result-label {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    white-space: nowrap;
+  .schema code {
+    font-family: var(--font-mono);
+    color: var(--color-accent);
+    flex-shrink: 0;
   }
 
-  .jsonpath-result pre {
-    flex: 1;
+  .schema span {
+    color: var(--color-text-secondary);
+  }
+
+  .query-result {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    overflow: hidden;
+  }
+
+  .qr-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--sp-1) var(--sp-3);
+    border-bottom: 1px solid var(--color-border);
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .query-result pre {
     margin: 0;
-    padding: 0.4rem;
-    background: var(--bg-card);
-    border-radius: 4px;
-    font-size: 0.8rem;
-    color: var(--accent-green);
+    padding: var(--sp-3);
     max-height: 240px;
-    overflow-y: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-
-  .copy-btn-small {
-    padding: 0.15rem 0.3rem !important;
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    font-size: 0.75rem;
-  }
-
-  .copy-btn-small:hover {
-    border-color: var(--primary) !important;
-    transform: none !important;
-  }
-
-  /* 后端错误提示 */
-  .backend-error {
-    padding: 0.6rem 0.8rem;
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid #ef4444;
-    border-radius: var(--radius-sm);
-    color: #fca5a5;
-    font-size: 0.85rem;
-    word-break: break-word;
-  }
-
-  /* Diff 结果 */
-  .diff-result {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-  }
-
-  .diff-summary {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 0.75rem;
-    background: var(--bg-card);
-    border-bottom: 1px solid var(--border);
-    font-size: 0.8rem;
-  }
-
-  .diff-stat {
-    font-family: 'JetBrains Mono', monospace;
-    font-weight: 600;
-  }
-  .diff-stat.add { color: var(--accent-green); }
-  .diff-stat.del { color: #f87171; }
-  .diff-stat.chg { color: #fbbf24; }
-  .diff-hint { color: var(--text-muted); margin-left: auto; }
-
-  .diff-rows {
-    max-height: 420px;
     overflow: auto;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.8rem;
-    line-height: 1.5;
+    background: var(--color-code-bg);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
   }
 
-  .diff-row {
-    display: grid;
-    grid-template-columns: 3rem 1fr 3rem 1fr;
-    white-space: pre-wrap;
-    word-break: break-word;
+  .history {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
   }
 
-  .diff-ln {
-    text-align: right;
-    padding: 0 0.5rem;
-    color: var(--text-muted);
-    background: var(--bg-card);
-    user-select: none;
+  .history summary {
+    padding: var(--sp-2) var(--sp-3);
+    cursor: pointer;
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
   }
 
-  .diff-cell {
-    padding: 0 0.5rem;
+  .hist-body {
+    padding: 0 var(--sp-3) var(--sp-3);
   }
 
-  .diff-row.insert .diff-cell.right,
-  .diff-row.replace .diff-cell.right {
-    background: rgba(16, 185, 129, 0.15);
-  }
-  .diff-row.delete .diff-cell.left,
-  .diff-row.replace .diff-cell.left {
-    background: rgba(248, 113, 113, 0.15);
-  }
-  .diff-row.delete .diff-cell.right,
-  .diff-row.insert .diff-cell.left {
-    background: rgba(255, 255, 255, 0.02);
+  .hist-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: var(--sp-2);
   }
 
-  /* Schema 校验结果 */
-  .schema-result {
-    padding: 0.6rem 0.8rem;
-    background: var(--bg-dark);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    font-size: 0.85rem;
-  }
-  .schema-ok { color: var(--accent-green); font-weight: 600; }
-  .schema-fail { color: #f87171; font-weight: 600; margin-bottom: 0.5rem; }
-
-  .schema-errors {
+  .history ul {
+    list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
-    max-height: 240px;
+    gap: var(--sp-1);
+    max-height: 220px;
     overflow-y: auto;
   }
 
-  .schema-err-item {
+  .history li {
     display: flex;
-    gap: 0.6rem;
-    align-items: baseline;
+    align-items: center;
+    gap: var(--sp-2);
   }
 
-  .schema-err-path {
-    color: var(--accent);
-    background: var(--bg-card);
-    padding: 0.1rem 0.4rem;
-    border-radius: 4px;
-    white-space: nowrap;
-    font-size: 0.78rem;
-  }
-
-  .schema-err-msg {
-    color: var(--text-secondary);
-    word-break: break-word;
-  }
-
-  /* 历史记录 */
-  .history-section {
-    background: var(--bg-dark);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-  }
-
-  .history-header {
+  .hist-item {
+    flex: 1;
+    min-width: 0;
     display: flex;
+    align-items: center;
     justify-content: space-between;
-    align-items: center;
-    padding: 0.4rem 0.6rem;
-    background: var(--bg-card);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .history-title {
-    font-size: 0.8rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-  }
-
-  .clear-history-btn {
-    padding: 0.15rem 0.4rem !important;
-    background: transparent !important;
-    border: 1px solid var(--border) !important;
-    font-size: 0.7rem;
-    color: var(--text-muted) !important;
-  }
-
-  .clear-history-btn:hover {
-    border-color: #ef4444 !important;
-    color: #ef4444 !important;
-    transform: none !important;
-  }
-
-  .history-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-    padding: 0.5rem;
-    max-height: 100px;
-    overflow-y: auto;
-  }
-
-  .history-item {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.3rem 0.5rem;
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
+    gap: var(--sp-3);
+    padding: var(--sp-1) var(--sp-2);
     border-radius: var(--radius-sm);
-    cursor: pointer;
-    max-width: 280px;
+    background: var(--color-surface-2);
     text-align: left;
   }
 
-  .history-item:hover {
-    border-color: var(--primary) !important;
-    background: var(--bg-hover) !important;
-    transform: none !important;
+  .hist-item:hover {
+    background: var(--color-surface-3);
   }
 
-  .history-preview {
-    font-size: 0.7rem;
-    font-family: 'JetBrains Mono', monospace;
-    color: var(--text-primary);
+  .hist-preview {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--color-text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 140px;
   }
 
-  .history-meta {
-    font-size: 0.6rem;
-    color: var(--text-muted);
+  .hist-meta {
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
     white-space: nowrap;
   }
 
-  .history-delete {
-    background: transparent;
-    border: none;
-    padding: 0;
-    font-size: 0.9rem;
-    color: var(--text-muted);
-    opacity: 0;
-    cursor: pointer;
+  .hist-del {
+    color: var(--color-text-muted);
+    padding: 0 var(--sp-1);
   }
 
-  .history-item:hover .history-delete {
-    opacity: 1;
-  }
-
-  .history-delete:hover {
-    color: #ef4444;
+  .hist-del:hover {
+    color: var(--color-danger);
   }
 </style>

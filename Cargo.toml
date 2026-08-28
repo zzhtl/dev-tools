@@ -1,6 +1,6 @@
 [package]
 name = "dev-tools"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "开发者工具箱：单文件 Rust Web 应用"
 license = "Apache-2.0"
@@ -12,7 +12,6 @@ path = "src/main.rs"
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.8", features = ["multipart"] }
-tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip"] }
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 mime_guess = "2"
@@ -23,14 +22,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 anyhow = "1"
-thiserror = "2"
-bytes = "1"
 
 # 业务依赖
 hickory-resolver = { version = "0.26", default-features = false, features = ["system-config", "tokio"] }
 image = "0.25"
-base64 = "0.22"
-uuid = { version = "1", features = ["v4"] }
 # JSON 格式互转 / Schema / 查询
 serde_yaml = "0.9.34"
 toml = "1.1.2"

@@ -1,6 +1,13 @@
 <script lang="ts">
     import cronParser from "cron-parser";
     import { format } from "date-fns";
+    import Button from "../../lib/ui/Button.svelte";
+    import CopyButton from "../../lib/ui/CopyButton.svelte";
+    import Panel from "../../lib/ui/Panel.svelte";
+    import Tabs from "../../lib/ui/Tabs.svelte";
+    import TextInput from "../../lib/ui/TextInput.svelte";
+    import TextArea from "../../lib/ui/TextArea.svelte";
+    import EmptyState from "../../lib/ui/EmptyState.svelte";
 
     type InputMode = "manual" | "smart";
 
@@ -9,7 +16,6 @@
     let errorMessage = $state("");
     let timezone = $state("Asia/Shanghai");
     let isLoading = $state(false);
-    let copied = $state<number | null>(null);
     let inputMode = $state<InputMode>("manual");
     let smartPrompt = $state("");
     let smartError = $state("");
@@ -65,16 +71,6 @@
             isLoading = false;
         }
     };
-
-    async function copyTime(time: string, index: number) {
-        try {
-            await navigator.clipboard.writeText(time);
-            copied = index;
-            setTimeout(() => copied = null, 1500);
-        } catch (err) {
-            console.error('复制失败:', err);
-        }
-    }
 
     function normalizePrompt(prompt: string): string {
         return prompt
@@ -296,623 +292,351 @@
     });
 </script>
 
-<div class="cron-tool">
-    <div class="header-section">
-        <div class="timezone-select">
-            <label for="cron-timezone">时区：</label>
-            <select id="cron-timezone" bind:value={timezone}>
-                {#each Intl.supportedValuesOf("timeZone") as tz}
-                    <option value={tz}>{tz.replace(/_/g, " ")}</option>
-                {/each}
-            </select>
+<div class="tool">
+  <div class="toolbar">
+    <Tabs
+      bind:value={inputMode}
+      tabs={[
+        { value: "manual", label: "手动输入" },
+        { value: "smart", label: "自然语言生成" },
+      ]}
+      ariaLabel="输入方式"
+    />
+    <div class="spacer"></div>
+    <label class="tz">
+      时区
+      <select bind:value={timezone} aria-label="时区">
+        {#each Intl.supportedValuesOf("timeZone") as tz (tz)}
+          <option value={tz}>{tz.replace(/_/g, " ")}</option>
+        {/each}
+      </select>
+    </label>
+  </div>
+
+  {#if inputMode === "manual"}
+    <Panel title="Cron 表达式">
+      {#snippet actions()}
+        <CopyButton value={() => cronExpression} disabled={!cronExpression} />
+      {/snippet}
+
+      <TextInput
+        bind:value={cronExpression}
+        mono
+        invalid={!!errorMessage}
+        placeholder="例如：0 9 * * 1-5"
+        ariaLabel="Cron 表达式"
+      />
+
+      {#if errorMessage}
+        <p class="error">{errorMessage}</p>
+      {/if}
+
+      <div class="fields">
+        {#each [["分钟", "0-59"], ["小时", "0-23"], ["日期", "1-31"], ["月份", "1-12"], ["星期", "0-7"]] as field, index (field[0])}
+          <div class="field">
+            <span class="value">{cronExpression.split(" ")[index] || "*"}</span>
+            <span class="name">{field[0]}</span>
+            <span class="range">{field[1]}</span>
+          </div>
+        {/each}
+      </div>
+    </Panel>
+
+    <Panel title="常用表达式">
+      <div class="presets">
+        {#each presets as preset (preset.value)}
+          <button class="preset" onclick={() => (cronExpression = preset.value)} title={preset.desc}>
+            <code>{preset.value}</code>
+            <span>{preset.label}</span>
+          </button>
+        {/each}
+      </div>
+    </Panel>
+  {:else}
+    <Panel title="自然语言描述">
+      {#snippet actions()}
+        <Button size="sm" variant="primary" onclick={generateFromPrompt}>生成表达式</Button>
+      {/snippet}
+
+      <TextArea
+        bind:value={smartPrompt}
+        rows={3}
+        mono={false}
+        placeholder="例如：每周一周三周五 1 点执行"
+        ariaLabel="自然语言描述"
+      />
+
+      {#if smartError}
+        <p class="error">{smartError}</p>
+      {/if}
+
+      {#if smartGeneratedExpression}
+        <div class="smart">
+          <div class="smart-row">
+            <code>{smartGeneratedExpression}</code>
+            <CopyButton value={smartGeneratedExpression} />
+            <Button size="sm" onclick={applyGeneratedCron}>切到手动编辑</Button>
+          </div>
+          <p class="note">{smartExplanation}</p>
         </div>
-    </div>
+      {/if}
 
-    <div class="input-section">
-        <div class="mode-tabs">
-            <button class:active={inputMode === "manual"} onclick={() => inputMode = "manual"}>手动输入</button>
-            <button class:active={inputMode === "smart"} onclick={() => inputMode = "smart"}>智能生成</button>
-        </div>
+      <div class="examples">
+        {#each smartExamples as example (example.prompt)}
+          <button class="example" onclick={() => (smartPrompt = example.prompt)}>
+            <span>{example.prompt}</span>
+            <code>{example.expression}</code>
+          </button>
+        {/each}
+      </div>
 
-        {#if inputMode === "manual"}
-            <div class="input-header">
-                <label for="cron-expression-input">Cron 表达式</label>
-                {#if isLoading}
-                    <span class="loading-badge">解析中...</span>
-                {/if}
-            </div>
-            
-            <input
-                id="cron-expression-input"
-                bind:value={cronExpression}
-                class:error={!!errorMessage}
-                placeholder="例如: 0 9 * * 1-5"
-            />
+      <ul class="rules">
+        {#each smartRules as rule (rule)}
+          <li>{rule}</li>
+        {/each}
+      </ul>
+    </Panel>
+  {/if}
 
-            {#if errorMessage}
-                <div class="error-message">
-                    ⚠️ {errorMessage}
-                </div>
-            {/if}
+  <Panel title="接下来 10 次执行" grow>
+    {#snippet actions()}
+      <CopyButton value={() => nextExecutions.join("\n")} label="复制全部" disabled={nextExecutions.length === 0} />
+    {/snippet}
 
-            <div class="cron-structure">
-                <div class="structure-item">
-                    <span class="field-value">{cronExpression.split(' ')[0] || '*'}</span>
-                    <span class="field-name">分钟</span>
-                    <span class="field-range">0-59</span>
-                </div>
-                <div class="structure-item">
-                    <span class="field-value">{cronExpression.split(' ')[1] || '*'}</span>
-                    <span class="field-name">小时</span>
-                    <span class="field-range">0-23</span>
-                </div>
-                <div class="structure-item">
-                    <span class="field-value">{cronExpression.split(' ')[2] || '*'}</span>
-                    <span class="field-name">日期</span>
-                    <span class="field-range">1-31</span>
-                </div>
-                <div class="structure-item">
-                    <span class="field-value">{cronExpression.split(' ')[3] || '*'}</span>
-                    <span class="field-name">月份</span>
-                    <span class="field-range">1-12</span>
-                </div>
-                <div class="structure-item">
-                    <span class="field-value">{cronExpression.split(' ')[4] || '*'}</span>
-                    <span class="field-name">星期</span>
-                    <span class="field-range">0-7</span>
-                </div>
-            </div>
-        {:else}
-            <div class="input-header smart-header">
-                <label for="cron-natural-input">自然语言描述</label>
-                <button class="generate-btn" onclick={generateFromPrompt}>生成表达式</button>
-            </div>
-
-            <textarea
-                id="cron-natural-input"
-                bind:value={smartPrompt}
-                rows="3"
-                placeholder="例如：每周一周三周五1点执行"
-            ></textarea>
-
-            {#if smartError}
-                <div class="error-message">
-                    ⚠️ {smartError}
-                </div>
-            {/if}
-
-            {#if smartGeneratedExpression}
-                <div class="smart-result">
-                    <div class="smart-result-row">
-                        <span class="smart-result-label">生成结果</span>
-                        <code>{smartGeneratedExpression}</code>
-                    </div>
-                    <div class="smart-result-note">{smartExplanation}</div>
-                    <button class="apply-btn" onclick={applyGeneratedCron}>切到手动编辑</button>
-                </div>
-            {/if}
-        {/if}
-    </div>
-
-    {#if inputMode === "manual"}
-        <div class="presets-section">
-            <h3>常用表达式</h3>
-            <div class="presets-grid">
-                {#each presets as preset}
-                    <button
-                        class="preset-btn"
-                        class:active={cronExpression === preset.value}
-                        onclick={() => (cronExpression = preset.value)}
-                        title={preset.desc}
-                    >
-                        <span class="preset-label">{preset.label}</span>
-                        <code class="preset-value">{preset.value}</code>
-                    </button>
-                {/each}
-            </div>
-        </div>
+    {#if errorMessage}
+      <EmptyState icon="⏰" title="表达式无效" hint="修正后会自动重新计算" />
+    {:else if nextExecutions.length === 0}
+      <EmptyState icon="⏰" title={isLoading ? "解析中…" : "还没有结果"} />
     {:else}
-        <div class="presets-section">
-            <h3>智能生成示例</h3>
-            <div class="presets-grid">
-                {#each smartExamples as example}
-                    <button
-                        class="preset-btn"
-                        class:active={smartPrompt === example.prompt}
-                        onclick={() => useSmartExample(example.prompt)}
-                        title={example.expression}
-                    >
-                        <span class="preset-label">{example.prompt}</span>
-                        <code class="preset-value">{example.expression}</code>
-                    </button>
-                {/each}
-            </div>
-        </div>
+      <ol class="times">
+        {#each nextExecutions as time, index (index)}
+          <li>
+            <span class="idx">{index + 1}</span>
+            <code>{time}</code>
+            <CopyButton value={time} icon title="复制时间" />
+          </li>
+        {/each}
+      </ol>
     {/if}
-
-    <div class="results-section">
-        <div class="results-header">
-            <h3>执行时间表</h3>
-            <span class="timezone-badge">{timezone}</span>
-        </div>
-
-        {#if nextExecutions.length > 0}
-            <div class="execution-list">
-                {#each nextExecutions as time, i}
-                    <div class="execution-item">
-                        <span class="index">#{i + 1}</span>
-                        <code class="time">{time}</code>
-                        <button
-                            class="copy-btn"
-                            onclick={() => copyTime(time, i)}
-                            title="复制"
-                        >
-                            {copied === i ? '✓' : '📋'}
-                        </button>
-                    </div>
-                {/each}
-            </div>
-        {:else if !errorMessage}
-            <div class="empty-state">
-                <span class="empty-icon">📭</span>
-                <span>没有可用的执行时间</span>
-            </div>
-        {/if}
-    </div>
-
-    <div class="info-section">
-        {#if inputMode === "manual"}
-            <h3>Cron 表达式语法</h3>
-            <div class="syntax-grid">
-                <div class="syntax-item">
-                    <code>*</code>
-                    <span>任意值</span>
-                </div>
-                <div class="syntax-item">
-                    <code>,</code>
-                    <span>值列表 (1,3,5)</span>
-                </div>
-                <div class="syntax-item">
-                    <code>-</code>
-                    <span>范围 (1-5)</span>
-                </div>
-                <div class="syntax-item">
-                    <code>/</code>
-                    <span>步长 (*/15)</span>
-                </div>
-            </div>
-        {:else}
-            <h3>智能生成输入规则</h3>
-            <div class="syntax-grid smart-rules-grid">
-                {#each smartRules as rule}
-                    <div class="syntax-item rule-item">
-                        <span>{rule}</span>
-                    </div>
-                {/each}
-            </div>
-        {/if}
-    </div>
+  </Panel>
 </div>
 
 <style>
-    .cron-tool {
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-    }
+  .tool {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    flex: 1;
+    min-height: 0;
+  }
 
-    .header-section {
-        display: flex;
-        justify-content: flex-end;
-    }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+  }
 
-    .timezone-select {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    }
+  .spacer {
+    flex: 1;
+  }
 
-    .timezone-select label {
-        font-size: 0.9rem;
-        color: var(--text-secondary);
-    }
+  .tz {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
+  }
 
-    .timezone-select select {
-        min-width: 220px;
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        color: var(--text-primary);
-        padding: 0.6rem 2.5rem 0.6rem 1rem;
-        font-size: 0.9rem;
-        cursor: pointer;
-        appearance: none;
-        -webkit-appearance: none;
-        background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
-        background-repeat: no-repeat;
-        background-position: right 0.75rem center;
-        background-size: 1em;
-    }
+  .tz select {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    padding: 0.3rem var(--sp-2);
+    font-size: var(--fs-sm);
+    max-width: 220px;
+  }
 
-    .timezone-select select:focus {
-        outline: none;
-        border-color: var(--primary);
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
-    }
+  .fields {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: var(--sp-2);
+    margin-top: var(--sp-3);
+  }
 
-    .timezone-select select option {
-        background: #1a1a2e;
-        color: #e4e4e7;
-        padding: 0.5rem;
-    }
+  .field {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: var(--sp-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+  }
 
-    .input-section {
-        padding: 1.25rem;
-        background: var(--bg-dark);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-    }
+  .value {
+    font-family: var(--font-mono);
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-semibold);
+    color: var(--color-primary);
+  }
 
-    .mode-tabs {
-        display: inline-flex;
-        gap: 0.35rem;
-        padding: 0.25rem;
-        margin-bottom: 1rem;
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-    }
+  .name {
+    font-size: var(--fs-xs);
+    color: var(--color-text-secondary);
+  }
 
-    .mode-tabs button {
-        padding: 0.45rem 0.9rem !important;
-        background: transparent !important;
-        color: var(--text-secondary) !important;
-        border: none !important;
-        box-shadow: none !important;
-    }
+  .range {
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+  }
 
-    .mode-tabs button.active {
-        background: var(--primary) !important;
-        color: white !important;
-    }
+  .presets {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: var(--sp-2);
+  }
 
-    .mode-tabs button:hover {
-        transform: none !important;
-        box-shadow: none !important;
-    }
+  .preset {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+    text-align: left;
+    transition:
+      border-color var(--motion),
+      background var(--motion);
+  }
 
-    .input-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 0.75rem;
-    }
+  .preset:hover {
+    border-color: var(--color-primary-border);
+    background: var(--color-primary-bg);
+  }
 
-    .input-header label {
-        font-weight: 500;
-    }
+  .preset code {
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
+    color: var(--color-accent);
+  }
 
-    .smart-header {
-        margin-bottom: 0.65rem;
-    }
+  .preset span {
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+  }
 
-    .loading-badge {
-        font-size: 0.8rem;
-        padding: 0.25rem 0.75rem;
-        background: var(--primary);
-        color: white;
-        border-radius: 100px;
-    }
+  .smart {
+    margin-top: var(--sp-3);
+    padding: var(--sp-3);
+    border: 1px solid var(--color-primary-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-primary-bg);
+  }
 
-    .input-section input {
-        width: 100%;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 1.1rem;
-        text-align: center;
-        letter-spacing: 0.1em;
-    }
+  .smart-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+  }
 
-    .input-section textarea {
-        width: 100%;
-        resize: vertical;
-        min-height: 88px;
-        font-family: 'JetBrains Mono', monospace;
-        line-height: 1.6;
-    }
+  .smart-row code {
+    flex: 1;
+    font-family: var(--font-mono);
+    font-size: var(--fs-lg);
+    color: var(--color-primary);
+  }
 
-    .input-section input.error {
-        border-color: #f87171 !important;
-    }
+  .note {
+    margin-top: var(--sp-2);
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
+  }
 
-    .generate-btn,
-    .apply-btn {
-        padding: 0.45rem 0.85rem !important;
-        font-size: 0.85rem;
-    }
+  .examples {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: var(--sp-2);
+    margin-top: var(--sp-3);
+  }
 
-    .generate-btn:hover,
-    .apply-btn:hover {
-        transform: none !important;
-    }
+  .example {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    padding: var(--sp-1) var(--sp-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
+    text-align: left;
+  }
 
-    .error-message {
-        margin-top: 0.75rem;
-        padding: 0.75rem 1rem;
-        background: rgba(239, 68, 68, 0.1);
-        border: 1px solid rgba(239, 68, 68, 0.3);
-        border-radius: var(--radius-sm);
-        color: #f87171;
-        font-size: 0.9rem;
-    }
+  .example:hover {
+    border-color: var(--color-border-strong);
+    color: var(--color-text);
+  }
 
-    .cron-structure {
-        display: flex;
-        justify-content: center;
-        gap: 0.5rem;
-        margin-top: 1rem;
-        padding-top: 1rem;
-        border-top: 1px solid var(--border);
-    }
+  .example code {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--color-accent);
+  }
 
-    .smart-result {
-        margin-top: 0.9rem;
-        padding: 0.9rem 1rem;
-        background: rgba(34, 211, 238, 0.08);
-        border: 1px solid rgba(34, 211, 238, 0.24);
-        border-radius: var(--radius-sm);
-    }
+  .rules {
+    margin-top: var(--sp-3);
+    padding-left: var(--sp-5);
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+    line-height: var(--lh-relaxed);
+  }
 
-    .smart-result-row {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        flex-wrap: wrap;
-    }
+  .times {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+  }
 
-    .smart-result-label {
-        font-size: 0.85rem;
-        color: var(--text-secondary);
-    }
+  .times li {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-1) var(--sp-2);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+  }
 
-    .smart-result-row code {
-        font-size: 0.95rem;
-        color: var(--accent);
-        background: var(--bg-card) !important;
-    }
+  .idx {
+    width: 1.5rem;
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+    text-align: right;
+  }
 
-    .smart-result-note {
-        margin-top: 0.65rem;
-        font-size: 0.85rem;
-        color: var(--text-secondary);
-        line-height: 1.6;
-    }
+  .times code {
+    flex: 1;
+    font-family: var(--font-mono);
+    font-size: var(--fs-md);
+    color: var(--color-text);
+  }
 
-    .smart-result .apply-btn {
-        margin-top: 0.85rem;
-    }
-
-    .structure-item {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.25rem;
-        padding: 0.5rem 1rem;
-        background: var(--bg-card);
-        border-radius: var(--radius-sm);
-        min-width: 70px;
-    }
-
-    .field-value {
-        font-family: 'JetBrains Mono', monospace;
-        font-weight: 600;
-        color: var(--accent);
-        font-size: 1.1rem;
-    }
-
-    .field-name {
-        font-size: 0.75rem;
-        color: var(--text-secondary);
-    }
-
-    .field-range {
-        font-size: 0.7rem;
-        color: var(--text-muted);
-    }
-
-    .presets-section {
-        padding: 1rem;
-        background: var(--bg-dark);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-    }
-
-    .presets-section h3 {
-        font-size: 0.9rem;
-        margin-bottom: 0.75rem;
-        color: var(--text-secondary);
-    }
-
-    .presets-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 0.5rem;
-    }
-
-    .preset-btn {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-        padding: 0.75rem !important;
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border) !important;
-        text-align: left;
-        cursor: pointer;
-    }
-
-    .preset-btn:hover {
-        border-color: var(--primary) !important;
-        transform: none !important;
-        box-shadow: none !important;
-    }
-
-    .preset-btn.active {
-        background: rgba(34, 211, 238, 0.1) !important;
-        border-color: var(--accent) !important;
-    }
-
-    .preset-label {
-        font-weight: 500;
-        color: var(--text-primary);
-    }
-
-    .preset-value {
-        font-size: 0.8rem;
-        color: var(--accent);
-        background: transparent !important;
-        padding: 0 !important;
-    }
-
-    .results-section {
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        overflow: hidden;
-    }
-
-    .results-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.75rem 1rem;
-        background: var(--bg-dark);
-        border-bottom: 1px solid var(--border);
-    }
-
-    .results-header h3 {
-        font-size: 0.95rem;
-        margin: 0;
-    }
-
-    .timezone-badge {
-        font-size: 0.8rem;
-        padding: 0.25rem 0.75rem;
-        background: var(--bg-hover);
-        border-radius: 100px;
-        color: var(--text-secondary);
-    }
-
-    .execution-list {
-        max-height: 400px;
-        overflow-y: auto;
-    }
-
-    .execution-item {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        padding: 0.75rem 1rem;
-        border-bottom: 1px solid var(--border);
-        transition: background 0.15s;
-    }
-
-    .execution-item:last-child {
-        border-bottom: none;
-    }
-
-    .execution-item:hover {
-        background: var(--bg-hover);
-    }
-
-    .index {
-        font-size: 0.85rem;
-        color: var(--text-muted);
-        min-width: 30px;
-    }
-
-    .time {
-        flex: 1;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.95rem;
-        color: var(--accent);
-        background: transparent !important;
-        padding: 0 !important;
-    }
-
-    .copy-btn {
-        padding: 0.35rem 0.65rem !important;
-        background: transparent !important;
-        border: none !important;
-        opacity: 0.5;
-        transition: opacity 0.15s;
-    }
-
-    .execution-item:hover .copy-btn {
-        opacity: 1;
-    }
-
-    .empty-state {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 2rem;
-        gap: 0.5rem;
-        color: var(--text-muted);
-    }
-
-    .empty-icon {
-        font-size: 2rem;
-    }
-
-    .info-section {
-        padding: 1rem;
-        background: var(--bg-dark);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-    }
-
-    .info-section h3 {
-        font-size: 0.9rem;
-        margin-bottom: 0.75rem;
-        color: var(--text-secondary);
-    }
-
-    .syntax-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-        gap: 0.5rem;
-    }
-
-    .syntax-item {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        padding: 0.5rem 0.75rem;
-        background: var(--bg-card);
-        border-radius: var(--radius-sm);
-    }
-
-    .syntax-item code {
-        font-weight: 600;
-        color: var(--accent);
-        background: transparent !important;
-        padding: 0 !important;
-        min-width: 30px;
-    }
-
-    .syntax-item span {
-        font-size: 0.85rem;
-        color: var(--text-muted);
-    }
-
-    .smart-rules-grid {
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    }
-
-    .rule-item {
-        align-items: flex-start;
-    }
-
-    .rule-item span {
-        line-height: 1.6;
-    }
+  .error {
+    margin-top: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid var(--color-danger-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-danger-bg);
+    color: var(--color-danger);
+    font-size: var(--fs-sm);
+  }
 </style>

@@ -1,587 +1,493 @@
 <script lang="ts">
-  import JsonTool from "./tools/json_tool/json_tool.svelte";
-  import CronTool from "./tools/cron_tool/cron_tool.svelte";
-  import CryptoTool from "./tools/crypto_tool/crypto_tool.svelte";
-  import CmdLinux from "./tools/cmd_linux/cmd_linux.svelte";
-  import TimeConvert from "./tools/time_tool/time_convert.svelte";
-  import QrCodeTool from "./tools/qrcode_tool/qrcode_tool.svelte";
-  import Base64Tool from "./tools/base64_tool/base64_tool.svelte";
-  import DnsTool from "./tools/dns_tool/dns_tool.svelte";
-  import RegexTool from "./tools/regex_tool/regex_tool.svelte";
-  import HtmlTool from "./tools/html_tool/html_tool.svelte";
-  import ColorTool from "./tools/color_tool/color_tool.svelte";
-  import ImageTool from "./tools/image_tool/image_tool.svelte";
-  import UuidTool from "./tools/uuid_tool/uuid_tool.svelte";
-  import HashTool from "./tools/hash_tool/hash_tool.svelte";
-  import UrlTool from "./tools/url_tool/url_tool.svelte";
-  import JwtTool from "./tools/jwt_tool/jwt_tool.svelte";
-  import TextDiffTool from "./tools/text_diff_tool/text_diff_tool.svelte";
-  import MarkdownTool from "./tools/markdown_tool/markdown_tool.svelte";
+  import { onMount, untrack, type Component } from "svelte";
+  import { TOOLS, TOOL_BY_ID, groupByCategory, type ToolMeta } from "./lib/tools";
+  import { initRouter, router } from "./lib/router.svelte";
+  import { initTheme, theme, THEME_ICONS, THEME_LABELS } from "./lib/theme.svelte";
+  import { prefs } from "./lib/prefs.svelte";
+  import { isEditableTarget, matchesShortcut, MOD_LABEL } from "./lib/shortcuts";
+  import CommandPalette from "./lib/ui/CommandPalette.svelte";
+  import ShortcutHelp from "./lib/ui/ShortcutHelp.svelte";
+  import Toast from "./lib/ui/Toast.svelte";
 
-  let activeTab = $state("jsonTool");
-  let sidebarCollapsed = $state(false);
+  type ToolComponent = Component<any>;
 
-  const toolCategories = [
-    {
-      name: "数据处理",
-      tools: [
-        { id: "jsonTool", name: "JSON 工具", icon: "{ }", desc: "格式化、转换、Diff、Schema、查询" },
-        { id: "regexTool", name: "正则表达式", icon: ".*", desc: "正则测试与匹配" },
-        { id: "htmlTool", name: "HTML 工具", icon: "</>", desc: "格式化、压缩、预览" },
-        { id: "textDiffTool", name: "文本对比", icon: "⇆", desc: "两段文本差异对比" },
-        { id: "markdownTool", name: "Markdown", icon: "M↓", desc: "Markdown 实时预览" },
-      ]
-    },
-    {
-      name: "时间日期",
-      tools: [
-        { id: "timeConvert", name: "时间转换", icon: "⏱", desc: "时间戳与日期转换" },
-        { id: "cronTool", name: "Cron 表达式", icon: "⏰", desc: "Cron表达式解析" },
-      ]
-    },
-    {
-      name: "编码加密",
-      tools: [
-        { id: "cryptoTool", name: "加密解密", icon: "🔐", desc: "AES/RSA/DES加解密" },
-        { id: "jwtTool", name: "JWT 解析", icon: "🔑", desc: "解码与验签 JWT" },
-        { id: "base64Tool", name: "Base64", icon: "📄", desc: "图片转Base64编码" },
-        { id: "hashTool", name: "Hash 计算", icon: "#", desc: "MD5/SHA哈希计算" },
-        { id: "urlTool", name: "URL 编解码", icon: "%", desc: "URL编码与解码" },
-      ]
-    },
-    {
-      name: "生成工具",
-      tools: [
-        { id: "qrCodeTool", name: "二维码", icon: "▣", desc: "生成二维码" },
-        { id: "uuidTool", name: "UUID", icon: "⊕", desc: "生成UUID标识符" },
-        { id: "colorTool", name: "颜色选择器", icon: "◐", desc: "颜色转换与选择" },
-      ]
-    },
-    {
-      name: "网络工具",
-      tools: [
-        { id: "dnsTool", name: "DNS 解析", icon: "◎", desc: "域名DNS查询" },
-      ]
-    },
-    {
-      name: "系统工具",
-      tools: [
-        { id: "cmdLinux", name: "Linux 命令", icon: "$_", desc: "Linux命令查询" },
-        { id: "imageTool", name: "图片转换", icon: "◲", desc: "图片格式转换" },
-      ]
+  onMount(() => {
+    initTheme();
+    initRouter();
+  });
+
+  const activeTool = $derived(TOOL_BY_ID.get(router.id) ?? TOOLS[0]);
+  const categories = groupByCategory(TOOLS);
+
+  const favoriteTools = $derived(
+    prefs.favorites.map((id) => TOOL_BY_ID.get(id)).filter((tool): tool is ToolMeta => !!tool),
+  );
+  const recentTools = $derived(
+    prefs.recents
+      .map((id) => TOOL_BY_ID.get(id))
+      .filter((tool): tool is ToolMeta => !!tool)
+      .slice(0, 5),
+  );
+  // 只有一条时就是当前工具本身，与下方分类完全重复，没必要单独占一组
+  const recentGroup = $derived(recentTools.length >= 2 ? recentTools : []);
+
+  // ── 按需加载工具组件 ──
+  const cache = new Map<string, ToolComponent>();
+  let ToolView = $state<ToolComponent | null>(null);
+  let loadFailed = $state(false);
+
+  $effect(() => {
+    const tool = activeTool;
+    const cached = cache.get(tool.id);
+    if (cached) {
+      ToolView = cached;
+      loadFailed = false;
+      return;
     }
-  ];
+    ToolView = null;
+    loadFailed = false;
+    let cancelled = false;
+    tool
+      .load()
+      .then((module) => {
+        if (cancelled) return;
+        cache.set(tool.id, module.default);
+        ToolView = module.default;
+      })
+      .catch(() => {
+        if (!cancelled) loadFailed = true;
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
 
-  function toggleSidebar() {
-    sidebarCollapsed = !sidebarCollapsed;
+  // 记录最近使用。touch 内部会读写同一份状态，必须 untrack 否则自触发成环。
+  $effect(() => {
+    const id = activeTool.id;
+    untrack(() => prefs.touch(id));
+  });
+
+  let paletteOpen = $state(false);
+  let helpOpen = $state(false);
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (matchesShortcut(event, { key: "k", mod: true })) {
+      event.preventDefault();
+      paletteOpen = !paletteOpen;
+      return;
+    }
+    if (matchesShortcut(event, { key: "/", mod: true })) {
+      event.preventDefault();
+      helpOpen = !helpOpen;
+      return;
+    }
+    if (matchesShortcut(event, { key: "b", mod: true })) {
+      event.preventDefault();
+      prefs.toggleSidebar();
+      return;
+    }
+    if (matchesShortcut(event, { key: "l", mod: true, shift: true })) {
+      event.preventDefault();
+      theme.cycle();
+      return;
+    }
+    if (event.key === "Escape") {
+      if (paletteOpen || helpOpen) {
+        event.preventDefault();
+        paletteOpen = false;
+        helpOpen = false;
+      }
+      return;
+    }
+    // 其余按键交还给工具自身；输入框内更是完全不拦截
+    if (isEditableTarget(event.target)) return;
   }
 </script>
 
-<main class="app-container">
-  <aside class="sidebar" class:collapsed={sidebarCollapsed}>
-    <div class="sidebar-header">
-      <div class="logo">
-        {#if !sidebarCollapsed}
-          <span class="logo-icon">⚡</span>
-          <span class="logo-text">开发工具箱</span>
-        {:else}
-          <span class="logo-icon">⚡</span>
-        {/if}
-      </div>
-      <button class="collapse-btn" onclick={toggleSidebar} title={sidebarCollapsed ? "展开菜单" : "收起菜单"}>
-        {sidebarCollapsed ? "→" : "←"}
+<svelte:window onkeydown={handleKeydown} />
+
+<div class="app" class:collapsed={prefs.sidebarCollapsed}>
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">⚡</span>
+      {#if !prefs.sidebarCollapsed}<span class="brand-name">开发工具箱</span>{/if}
+      <button
+        class="collapse"
+        onclick={() => prefs.toggleSidebar()}
+        title={`${prefs.sidebarCollapsed ? "展开" : "收起"}侧边栏 (${MOD_LABEL} B)`}
+        aria-label={prefs.sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
+      >
+        {prefs.sidebarCollapsed ? "»" : "«"}
       </button>
     </div>
 
-    <nav class="nav-menu">
-      {#each toolCategories as category}
-        <div class="category">
-          {#if !sidebarCollapsed}
-            <div class="category-title">{category.name}</div>
-          {/if}
-          <div class="category-tools">
-            {#each category.tools as tool}
+    <nav class="nav">
+      {#snippet navGroup(name: string, tools: ToolMeta[])}
+        {#if tools.length > 0}
+          <div class="group">
+            {#if !prefs.sidebarCollapsed}<p class="group-name">{name}</p>{/if}
+            {#each tools as tool (tool.id)}
               <button
-                class="nav-item"
-                class:active={activeTab === tool.id}
-                onclick={() => (activeTab = tool.id)}
-                title={sidebarCollapsed ? `${tool.name}: ${tool.desc}` : tool.desc}
+                class="item"
+                class:active={activeTool.id === tool.id}
+                onclick={() => router.navigate(tool.id)}
+                title={prefs.sidebarCollapsed ? `${tool.name} — ${tool.desc}` : tool.desc}
               >
-                <span class="nav-icon">{tool.icon}</span>
-                {#if !sidebarCollapsed}
-                  <span class="nav-text">{tool.name}</span>
-                {/if}
+                <span class="item-icon" aria-hidden="true">{tool.icon}</span>
+                {#if !prefs.sidebarCollapsed}<span class="item-name">{tool.name}</span>{/if}
               </button>
             {/each}
           </div>
-        </div>
+        {/if}
+      {/snippet}
+
+      {@render navGroup("收藏", favoriteTools)}
+      {@render navGroup("最近使用", recentGroup)}
+      {#each categories as category (category.name)}
+        {@render navGroup(category.name, category.tools)}
       {/each}
     </nav>
   </aside>
 
-  <div class="main-content">
-    <div class="content-body">
-      <div class="tool-container">
-        {#if activeTab === "jsonTool"}
-          <JsonTool />
-        {:else if activeTab === "cronTool"}
-          <CronTool />
-        {:else if activeTab === "cryptoTool"}
-          <CryptoTool />
-        {:else if activeTab === "cmdLinux"}
-          <CmdLinux />
-        {:else if activeTab === "timeConvert"}
-          <TimeConvert />
-        {:else if activeTab === "qrCodeTool"}
-          <QrCodeTool />
-        {:else if activeTab === "base64Tool"}
-          <Base64Tool />
-        {:else if activeTab === "dnsTool"}
-          <DnsTool />
-        {:else if activeTab === "regexTool"}
-          <RegexTool />
-        {:else if activeTab === "htmlTool"}
-          <HtmlTool />
-        {:else if activeTab === "colorTool"}
-          <ColorTool />
-        {:else if activeTab === "imageTool"}
-          <ImageTool />
-        {:else if activeTab === "uuidTool"}
-          <UuidTool />
-        {:else if activeTab === "hashTool"}
-          <HashTool />
-        {:else if activeTab === "urlTool"}
-          <UrlTool />
-        {:else if activeTab === "jwtTool"}
-          <JwtTool />
-        {:else if activeTab === "textDiffTool"}
-          <TextDiffTool />
-        {:else if activeTab === "markdownTool"}
-          <MarkdownTool />
+  <div class="main">
+    <header class="topbar">
+      <div class="crumb">
+        <span class="crumb-icon" aria-hidden="true">{activeTool.icon}</span>
+        <span class="crumb-text">
+          <span class="crumb-name">{activeTool.name}</span>
+          <span class="crumb-desc">{activeTool.desc}</span>
+        </span>
+      </div>
+
+      <div class="top-actions">
+        <button class="search-entry" onclick={() => (paletteOpen = true)} title="搜索工具">
+          <span aria-hidden="true">⌕</span>
+          <span class="search-label">搜索工具</span>
+          <kbd>{MOD_LABEL} K</kbd>
+        </button>
+
+        <button
+          class="icon-action"
+          class:starred={prefs.isFavorite(activeTool.id)}
+          onclick={() => prefs.toggleFavorite(activeTool.id)}
+          title={prefs.isFavorite(activeTool.id) ? "取消收藏" : "收藏此工具"}
+          aria-label={prefs.isFavorite(activeTool.id) ? "取消收藏" : "收藏此工具"}
+        >
+          {prefs.isFavorite(activeTool.id) ? "★" : "☆"}
+        </button>
+
+        <button
+          class="icon-action"
+          onclick={() => theme.cycle()}
+          title={`主题：${THEME_LABELS[theme.mode]}（${MOD_LABEL} ⇧ L）`}
+          aria-label="切换主题"
+        >
+          {THEME_ICONS[theme.mode]}
+        </button>
+
+        <button
+          class="icon-action"
+          onclick={() => (helpOpen = true)}
+          title={`快捷键 (${MOD_LABEL} /)`}
+          aria-label="快捷键帮助"
+        >
+          ?
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+      <div class="tool-host">
+        {#if ToolView}
+          <ToolView />
+        {:else if loadFailed}
+          <p class="load-state error">工具加载失败，请刷新页面重试。</p>
+        {:else}
+          <p class="load-state">正在加载 {activeTool.name}…</p>
         {/if}
       </div>
-    </div>
+    </main>
   </div>
-</main>
+</div>
+
+<CommandPalette
+  open={paletteOpen}
+  onclose={() => (paletteOpen = false)}
+  onselect={(id) => router.navigate(id)}
+/>
+<ShortcutHelp open={helpOpen} onclose={() => (helpOpen = false)} />
+<Toast />
 
 <style>
-  :global(*) {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-  }
-
-  :global(body) {
-    font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #0f0f23;
-    color: #e4e4e7;
-    overflow: hidden;
-  }
-
-  :global(:root) {
-    --primary: #6366f1;
-    --primary-light: #818cf8;
-    --primary-dark: #4f46e5;
-    --accent: #22d3ee;
-    --accent-green: #10b981;
-    --bg-dark: #0f0f23;
-    --bg-card: #18182f;
-    --bg-hover: #1e1e3f;
-    --bg-active: #252550;
-    --border: #2d2d5a;
-    --text-primary: #f4f4f5;
-    --text-secondary: #a1a1aa;
-    --text-muted: #71717a;
-    --shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-    --radius: 12px;
-    --radius-sm: 8px;
-    --transition: all 0.2s ease;
-  }
-
-  .app-container {
+  .app {
     display: flex;
     height: 100vh;
     width: 100vw;
     overflow: hidden;
   }
 
+  /* ── 侧边栏 ── */
   .sidebar {
-    width: 240px;
-    background: linear-gradient(180deg, #18182f 0%, #0f0f23 100%);
-    border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    transition: width 0.3s ease;
-    position: relative;
-    z-index: 10;
+    width: var(--sidebar-width);
+    flex-shrink: 0;
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+    transition: width var(--motion-slow);
   }
 
-  .sidebar.collapsed {
-    width: 72px;
+  .collapsed .sidebar {
+    width: var(--sidebar-width-collapsed);
   }
 
-  .sidebar-header {
-    padding: 1.25rem;
+  .brand {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid var(--border);
-    min-height: 68px;
+    gap: var(--sp-2);
+    height: var(--topbar-height);
+    padding: 0 var(--sp-3);
+    border-bottom: 1px solid var(--color-border);
+    flex-shrink: 0;
   }
 
   .logo {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
+    font-size: var(--fs-lg);
+    line-height: 1;
+  }
+
+  .brand-name {
+    font-size: var(--fs-md);
+    font-weight: var(--fw-semibold);
+    white-space: nowrap;
     overflow: hidden;
   }
 
-  .logo-icon {
-    font-size: 1.5rem;
-    min-width: 32px;
-    text-align: center;
-    filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.5));
+  .collapse {
+    margin-left: auto;
+    padding: var(--sp-1);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--fs-sm);
+    transition:
+      color var(--motion),
+      background var(--motion);
   }
 
-  .logo-text {
-    font-weight: 700;
-    font-size: 1.1rem;
-    background: linear-gradient(135deg, var(--primary-light) 0%, var(--accent) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    white-space: nowrap;
+  .collapse:hover {
+    color: var(--color-text);
+    background: var(--color-surface-2);
   }
 
-  .collapse-btn {
-    width: 28px;
-    height: 28px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-card);
-    color: var(--text-secondary);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.8rem;
-    transition: var(--transition);
-  }
-
-  .collapse-btn:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    border-color: var(--primary);
-  }
-
-  .nav-menu {
+  .nav {
     flex: 1;
     overflow-y: auto;
-    padding: 1rem 0.75rem;
+    padding: var(--sp-3) var(--sp-2);
   }
 
-  .nav-menu::-webkit-scrollbar {
-    width: 4px;
+  .group + .group {
+    margin-top: var(--sp-4);
   }
 
-  .nav-menu::-webkit-scrollbar-track {
-    background: transparent;
+  .group-name {
+    padding: 0 var(--sp-2);
+    margin-bottom: var(--sp-1);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+    letter-spacing: 0.06em;
+    color: var(--color-text-muted);
   }
 
-  .nav-menu::-webkit-scrollbar-thumb {
-    background: var(--border);
-    border-radius: 2px;
-  }
-
-  .category {
-    margin-bottom: 1.25rem;
-  }
-
-  .category-title {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--text-muted);
-    padding: 0 0.75rem;
-    margin-bottom: 0.5rem;
-    font-weight: 600;
-  }
-
-  .category-tools {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .nav-item {
+  .item {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.65rem 0.75rem;
-    border: none;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: var(--transition);
-    font-size: 0.9rem;
-    text-align: left;
+    gap: var(--sp-2);
     width: 100%;
+    padding: 0.4rem var(--sp-2);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    font-size: var(--fs-md);
+    text-align: left;
+    transition:
+      background var(--motion),
+      color var(--motion);
   }
 
-  .nav-item:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
+  .item:hover {
+    background: var(--color-surface-2);
+    color: var(--color-text);
   }
 
-  .nav-item.active {
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(34, 211, 238, 0.1) 100%);
-    color: var(--accent);
-    border-left: 3px solid var(--accent);
-    margin-left: -3px;
+  .item.active {
+    background: var(--color-primary-bg);
+    color: var(--color-primary);
+    font-weight: var(--fw-medium);
   }
 
-  .nav-icon {
-    min-width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.95rem;
-    font-family: 'JetBrains Mono', monospace;
-    font-weight: 600;
+  .item-icon {
+    width: 1.5rem;
+    flex-shrink: 0;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
   }
 
-  .nav-text {
-    white-space: nowrap;
+  .item-name {
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .main-content {
+  .collapsed .item {
+    justify-content: center;
+  }
+
+  /* ── 主区 ── */
+  .main {
     flex: 1;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
-    background: var(--bg-dark);
+    min-width: 0;
+    background: var(--color-bg);
   }
 
-  .content-body {
-    flex: 1;
+  .topbar {
     display: flex;
-    overflow: auto;
-    padding: 1.5rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    height: var(--topbar-height);
+    padding: 0 var(--sp-4);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+    flex-shrink: 0;
   }
 
-  .content-body::-webkit-scrollbar {
-    width: 8px;
+  .crumb {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    min-width: 0;
   }
 
-  .content-body::-webkit-scrollbar-track {
-    background: var(--bg-dark);
+  .crumb-icon {
+    font-family: var(--font-mono);
+    color: var(--color-text-muted);
   }
 
-  .content-body::-webkit-scrollbar-thumb {
-    background: var(--border);
+  .crumb-text {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-3);
+    min-width: 0;
+  }
+
+  .crumb-name {
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-semibold);
+    white-space: nowrap;
+  }
+
+  .crumb-desc {
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .top-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    flex-shrink: 0;
+  }
+
+  .search-entry {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: 0.3rem var(--sp-2) 0.3rem var(--sp-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg);
+    color: var(--color-text-muted);
+    font-size: var(--fs-sm);
+    transition:
+      border-color var(--motion),
+      color var(--motion);
+  }
+
+  .search-entry:hover {
+    border-color: var(--color-border-strong);
+    color: var(--color-text-secondary);
+  }
+
+  .icon-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--fs-md);
+    transition:
+      color var(--motion),
+      background var(--motion);
+  }
+
+  .icon-action:hover {
+    color: var(--color-text);
+    background: var(--color-surface-2);
+  }
+
+  .icon-action.starred {
+    color: var(--color-warning);
+  }
+
+  kbd {
+    padding: 1px 5px;
+    border: 1px solid var(--color-border);
     border-radius: 4px;
+    background: var(--color-surface-2);
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
   }
 
-  .content-body::-webkit-scrollbar-thumb:hover {
-    background: var(--text-muted);
-  }
-
-  .tool-container {
+  .content {
     flex: 1;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 1rem;
-    min-height: 100%;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--sp-4);
+    display: flex;
   }
 
-  :global(.tool-container .json-tool),
-  :global(.tool-container .cron-tool),
-  :global(.tool-container .crypto-tool),
-  :global(.tool-container .cmd-tool),
-  :global(.tool-container .time-tool),
-  :global(.tool-container .qrcode-tool),
-  :global(.tool-container .base64-tool),
-  :global(.tool-container .dns-tool),
-  :global(.tool-container .regex-tool),
-  :global(.tool-container .html-tool),
-  :global(.tool-container .color-tool),
-  :global(.tool-container .image-tool),
-  :global(.tool-container .uuid-tool),
-  :global(.tool-container .hash-tool),
-  :global(.tool-container .url-tool),
-  :global(.tool-container .jwt-tool),
-  :global(.tool-container .text-diff-tool),
-  :global(.tool-container .markdown-tool) {
-    gap: 1rem !important;
+  .tool-host {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
   }
 
-  :global(.tool-container .tool-header) {
-    display: none !important;
+  .load-state {
+    margin: auto;
+    color: var(--color-text-muted);
+    font-size: var(--fs-md);
   }
 
-  :global(.tool-container .header-desc) {
-    display: none !important;
+  .load-state.error {
+    color: var(--color-danger);
   }
 
-  :global(.tool-container .header-section),
-  :global(.tool-container .search-section),
-  :global(.tool-container .input-section),
-  :global(.tool-container .results-section),
-  :global(.tool-container .presets-section),
-  :global(.tool-container .options-section),
-  :global(.tool-container .preview-section),
-  :global(.tool-container .controls),
-  :global(.tool-container .algorithm-selector),
-  :global(.tool-container .key-section),
-  :global(.tool-container .jsonpath-result),
-  :global(.tool-container .history-section),
-  :global(.tool-container .info-section),
-  :global(.tool-container .reference-section),
-  :global(.tool-container .quick-presets),
-  :global(.tool-container .editor-layout),
-  :global(.tool-container .toolbar),
-  :global(.tool-container .options-bar),
-  :global(.tool-container .stats-bar),
-  :global(.tool-container .error-panel) {
-    margin-top: 0 !important;
-  }
+  @media (max-width: 720px) {
+    .search-label {
+      display: none;
+    }
 
-  :global(.tool-container .input-section),
-  :global(.tool-container .results-section),
-  :global(.tool-container .presets-section),
-  :global(.tool-container .options-section),
-  :global(.tool-container .preview-section),
-  :global(.tool-container .controls),
-  :global(.tool-container .algorithm-selector),
-  :global(.tool-container .key-section),
-  :global(.tool-container .info-section),
-  :global(.tool-container .reference-section),
-  :global(.tool-container .quick-presets) {
-    padding-top: 0.875rem !important;
-    padding-bottom: 0.875rem !important;
-  }
-
-  :global(.tool-container .section-header),
-  :global(.tool-container .results-header),
-  :global(.tool-container .result-header),
-  :global(.tool-container .preview-header),
-  :global(.tool-container .panel-header),
-  :global(.tool-container .input-header),
-  :global(.tool-container .editor-header),
-  :global(.tool-container .history-header),
-  :global(.tool-container .reference-header),
-  :global(.tool-container .key-header) {
-    margin-bottom: 0.5rem !important;
-  }
-
-  :global(.tool-container input),
-  :global(.tool-container textarea),
-  :global(.tool-container select) {
-    background: var(--bg-dark);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    padding: 0.75rem 1rem;
-    font-family: inherit;
-    font-size: 0.9rem;
-    transition: var(--transition);
-  }
-
-  :global(.tool-container select) {
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
-    background-repeat: no-repeat;
-    background-position: right 0.75rem center;
-    background-size: 1em;
-    padding-right: 2.5rem;
-    cursor: pointer;
-  }
-
-  :global(.tool-container select option) {
-    background: #1a1a2e;
-    color: #e4e4e7;
-    padding: 0.5rem;
-  }
-
-  :global(.tool-container select option:hover),
-  :global(.tool-container select option:checked) {
-    background: #2d2d44;
-    color: #fff;
-  }
-
-  :global(.tool-container select::-ms-expand) {
-    display: none;
-  }
-
-  :global(.tool-container input:focus),
-  :global(.tool-container textarea:focus),
-  :global(.tool-container select:focus) {
-    outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
-  }
-
-  :global(.tool-container input::placeholder),
-  :global(.tool-container textarea::placeholder) {
-    color: var(--text-muted);
-  }
-
-  :global(.tool-container button) {
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-    color: white;
-    border: none;
-    border-radius: var(--radius-sm);
-    padding: 0.65rem 1.25rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: var(--transition);
-  }
-
-  :global(.tool-container button:hover) {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
-  }
-
-  :global(.tool-container button:active) {
-    transform: translateY(0);
-  }
-
-  :global(.tool-container h1),
-  :global(.tool-container h2),
-  :global(.tool-container h3) {
-    color: var(--text-primary);
-  }
-
-  :global(.tool-container h3) {
-    font-size: 0.95rem;
-  }
-
-  :global(.tool-container p),
-  :global(.tool-container label) {
-    color: var(--text-secondary);
-  }
-
-  :global(.tool-container code) {
-    font-family: 'JetBrains Mono', monospace;
-    background: var(--bg-dark);
-    padding: 0.2rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.85rem;
-  }
-
-  :global(.tool-container pre) {
-    font-family: 'JetBrains Mono', monospace;
-    background: var(--bg-dark);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 1rem;
-    overflow-x: auto;
+    .crumb-desc {
+      display: none;
+    }
   }
 </style>

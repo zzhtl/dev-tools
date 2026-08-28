@@ -1,480 +1,237 @@
 <script lang="ts">
-    import QRCode from "qrcode";
-    import { onMount } from "svelte";
-    import { downloadDataUrl } from "../../lib/download";
-  
-    let text = $state("https://example.com");
-    let qrCodeUrl = $state("");
-    let qrSize = $state(256);
-    let errorLevel = $state<"L" | "M" | "Q" | "H">("M");
-    let darkColor = $state("#000000");
-    let lightColor = $state("#ffffff");
-    let copied = $state(false);
+  import QRCode from "qrcode";
+  import { downloadDataUrl } from "../../lib/download";
+  import Button from "../../lib/ui/Button.svelte";
+  import Panel from "../../lib/ui/Panel.svelte";
+  import SplitPane from "../../lib/ui/SplitPane.svelte";
+  import TextArea from "../../lib/ui/TextArea.svelte";
+  import Field from "../../lib/ui/Field.svelte";
+  import { toast } from "../../lib/toast.svelte";
 
-    const presets = [
-        { label: "网址", value: "https://example.com", icon: "🌐" },
-        { label: "邮箱", value: "mailto:example@mail.com", icon: "📧" },
-        { label: "电话", value: "tel:+8612345678901", icon: "📞" },
-        { label: "WiFi", value: "WIFI:S:NetworkName;T:WPA;P:password;;", icon: "📶" },
-    ];
-  
-    const generateQRCode = async () => {
-        try {
-            qrCodeUrl = await QRCode.toDataURL(text, {
-                width: qrSize,
-                margin: 2,
-                errorCorrectionLevel: errorLevel,
-                color: {
-                    dark: darkColor,
-                    light: lightColor,
-                },
-            });
-        } catch (err) {
-            console.error("生成二维码失败:", err);
-        }
-    };
-  
-    const saveQRCode = () => {
-        if (!qrCodeUrl) return;
-        downloadDataUrl(qrCodeUrl, 'qrcode.png');
-    };
+  const PRESETS = [
+    { label: "网址", value: "https://example.com" },
+    { label: "邮箱", value: "mailto:example@mail.com" },
+    { label: "电话", value: "tel:+8612345678901" },
+    { label: "WiFi", value: "WIFI:S:NetworkName;T:WPA;P:password;;" },
+  ];
 
-    async function copyQRCode() {
-        if (!qrCodeUrl) return;
-        try {
-            const base64Data = qrCodeUrl.split(',')[1];
-            const binary = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-            const blob = new Blob([binary], { type: 'image/png' });
-            await navigator.clipboard.write([
-                new ClipboardItem({ 'image/png': blob })
-            ]);
-            copied = true;
-            setTimeout(() => copied = false, 1500);
-        } catch (err) {
-            console.error('复制失败:', err);
-        }
+  const LEVELS = [
+    { value: "L", label: "L 约 7%" },
+    { value: "M", label: "M 约 15%" },
+    { value: "Q", label: "Q 约 25%" },
+    { value: "H", label: "H 约 30%" },
+  ];
+
+  let text = $state("https://example.com");
+  let size = $state(256);
+  let level = $state<"L" | "M" | "Q" | "H">("M");
+  let dark = $state("#000000");
+  let light = $state("#ffffff");
+
+  let dataUrl = $state("");
+  let error = $state("");
+
+  $effect(() => {
+    const content = text;
+    const options = { width: size, margin: 2, errorCorrectionLevel: level, color: { dark, light } };
+    if (!content) {
+      dataUrl = "";
+      error = "";
+      return;
     }
+    let cancelled = false;
+    // 输入时防抖，避免每个按键都重绘一次
+    const timer = setTimeout(() => {
+      QRCode.toDataURL(content, options)
+        .then((url: string) => {
+          if (!cancelled) {
+            dataUrl = url;
+            error = "";
+          }
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) {
+            dataUrl = "";
+            error = err instanceof Error ? err.message : String(err);
+          }
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  });
 
-    function selectPreset(value: string) {
-        text = value;
-        generateQRCode();
+  async function copyImage() {
+    if (!dataUrl) return;
+    try {
+      const base64 = dataUrl.split(",")[1];
+      const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+      const blob = new Blob([bytes], { type: "image/png" });
+      // ClipboardItem 需要安全上下文；局域网 IP 访问时会走到 catch
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      toast.success("二维码图片已复制");
+    } catch {
+      toast.error("当前环境不支持复制图片，请改用「下载 PNG」");
     }
-  
-    onMount(() => {
-        generateQRCode();
-    });
-
-    // 响应内容变化
-    $effect(() => {
-        if (text) {
-            const timer = setTimeout(() => {
-                generateQRCode();
-            }, 300);
-            return () => clearTimeout(timer);
-        }
-    });
+  }
 </script>
-  
-<div class="qrcode-tool">
-    <div class="input-section">
-        <div class="input-header">
-            <label for="qrcode-text-input">输入内容</label>
-            <div class="preset-buttons">
-                {#each presets as preset}
-                    <button 
-                        class="preset-btn"
-                        onclick={() => selectPreset(preset.value)}
-                        title={preset.value}
-                    >
-                        {preset.icon} {preset.label}
-                    </button>
-                {/each}
-            </div>
-        </div>
-        <textarea
-            id="qrcode-text-input"
-            bind:value={text}
-            placeholder="输入文本、网址、或其他内容..."
-            rows="4"
-        ></textarea>
-        <div class="char-count">{text.length} 字符</div>
-    </div>
 
-    <div class="main-content">
-        <div class="options-section">
-            <h3>生成选项</h3>
-            
-            <div class="option-group">
-                <div class="option-group-title">二维码尺寸</div>
-                <div class="size-options">
-                    {#each [128, 256, 512, 1024] as size}
-                        <button
-                            class="size-btn"
-                            class:active={qrSize === size}
-                            onclick={() => { qrSize = size; generateQRCode(); }}
-                        >
-                            {size}px
-                        </button>
-                    {/each}
-                </div>
-            </div>
+<div class="tool">
+  <SplitPane ratio={0.55}>
+    {#snippet left()}
+      <Panel title="内容" grow>
+        {#snippet actions()}
+          <span class="count">{text.length} 字符</span>
+        {/snippet}
 
-            <div class="option-group">
-                <div class="option-group-title">容错级别</div>
-                <div class="level-options">
-                    {#each [
-                        { value: "L", label: "L (7%)", desc: "低" },
-                        { value: "M", label: "M (15%)", desc: "中" },
-                        { value: "Q", label: "Q (25%)", desc: "较高" },
-                        { value: "H", label: "H (30%)", desc: "高" },
-                    ] as level}
-                        <button
-                            class="level-btn"
-                            class:active={errorLevel === level.value}
-                            onclick={() => { errorLevel = level.value as "L" | "M" | "Q" | "H"; generateQRCode(); }}
-                            title={level.desc}
-                        >
-                            {level.label}
-                        </button>
-                    {/each}
-                </div>
-            </div>
+        <TextArea bind:value={text} rows={6} placeholder="输入要编码的文本或链接…" ariaLabel="二维码内容" />
 
-            <div class="option-group">
-                <div class="option-group-title">颜色设置</div>
-                <div class="color-options">
-                    <div class="color-input">
-                        <span>前景色</span>
-                        <input
-                            type="color"
-                            bind:value={darkColor}
-                            onchange={generateQRCode}
-                        />
-                        <code>{darkColor}</code>
-                    </div>
-                    <div class="color-input">
-                        <span>背景色</span>
-                        <input
-                            type="color"
-                            bind:value={lightColor}
-                            onchange={generateQRCode}
-                        />
-                        <code>{lightColor}</code>
-                    </div>
-                </div>
-            </div>
+        <div class="presets">
+          {#each PRESETS as preset (preset.label)}
+            <Button size="sm" onclick={() => (text = preset.value)}>{preset.label}</Button>
+          {/each}
         </div>
 
-        <div class="preview-section">
-            <div class="preview-header">
-                <h3>预览</h3>
-                <span class="size-badge">{qrSize} × {qrSize}</span>
-            </div>
-            
-            {#if qrCodeUrl}
-                <div class="qr-preview">
-                    <img src={qrCodeUrl} alt="二维码" />
-                </div>
-                <div class="action-buttons">
-                    <button class="action-btn primary" onclick={saveQRCode}>
-                        💾 保存图片
-                    </button>
-                    <button class="action-btn secondary" onclick={copyQRCode}>
-                        {copied ? '✓ 已复制' : '📋 复制图片'}
-                    </button>
-                </div>
-            {:else}
-                <div class="empty-preview">
-                    <span>输入内容后生成二维码</span>
-                </div>
-            {/if}
-        </div>
-    </div>
+        <div class="options">
+          <Field label="尺寸" inline>
+            <input type="range" min="128" max="512" step="32" bind:value={size} />
+            <span class="value">{size}px</span>
+          </Field>
 
-    <div class="info-section">
-        <h3>二维码内容格式</h3>
-        <div class="format-grid">
-            <div class="format-item">
-                <span class="format-type">网址</span>
-                <code>https://example.com</code>
-            </div>
-            <div class="format-item">
-                <span class="format-type">邮箱</span>
-                <code>mailto:user@example.com</code>
-            </div>
-            <div class="format-item">
-                <span class="format-type">电话</span>
-                <code>tel:+8612345678901</code>
-            </div>
-            <div class="format-item">
-                <span class="format-type">WiFi</span>
-                <code>WIFI:S:名称;T:WPA;P:密码;;</code>
-            </div>
+          <Field label="容错" inline>
+            <select bind:value={level} aria-label="容错等级">
+              {#each LEVELS as item (item.value)}
+                <option value={item.value}>{item.label}</option>
+              {/each}
+            </select>
+          </Field>
+
+          <Field label="前景" inline>
+            <input type="color" bind:value={dark} aria-label="前景色" />
+          </Field>
+
+          <Field label="背景" inline>
+            <input type="color" bind:value={light} aria-label="背景色" />
+          </Field>
         </div>
-    </div>
+
+        <p class="tip">容错等级越高越抗遮挡，但同样内容需要更密的码点。加 logo 时用 H。</p>
+      </Panel>
+    {/snippet}
+
+    {#snippet right()}
+      <Panel title="预览" grow>
+        {#snippet actions()}
+          <Button size="sm" onclick={copyImage} disabled={!dataUrl}>复制图片</Button>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={!dataUrl}
+            onclick={() => downloadDataUrl(dataUrl, "qrcode.png")}
+          >
+            下载 PNG
+          </Button>
+        {/snippet}
+
+        <div class="stage">
+          {#if error}
+            <p class="error">生成失败：{error}</p>
+          {:else if dataUrl}
+            <img src={dataUrl} alt="二维码预览" style="width: {size}px; max-width: 100%;" />
+          {:else}
+            <p class="placeholder">输入内容后自动生成</p>
+          {/if}
+        </div>
+      </Panel>
+    {/snippet}
+  </SplitPane>
 </div>
-  
+
 <style>
-    .qrcode-tool {
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-    }
+  .tool {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
 
-    .input-section {
-        padding: 1rem;
-        background: var(--bg-dark);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-    }
+  .count {
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+  }
 
-    .input-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 0.75rem;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-    }
+  .presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    margin-top: var(--sp-3);
+  }
 
-    .input-header label {
-        font-weight: 500;
-    }
+  .options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--sp-3);
+    margin-top: var(--sp-4);
+  }
 
-    .preset-buttons {
-        display: flex;
-        gap: 0.5rem;
-        flex-wrap: wrap;
-    }
+  .options select {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    padding: 0.3rem var(--sp-2);
+    font-size: var(--fs-sm);
+  }
 
-    .preset-btn {
-        padding: 0.35rem 0.75rem !important;
-        font-size: 0.8rem !important;
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border) !important;
-    }
+  .options input[type="range"] {
+    accent-color: var(--color-primary);
+    width: 100%;
+  }
 
-    .preset-btn:hover {
-        border-color: var(--primary) !important;
-        transform: none !important;
-        box-shadow: none !important;
-    }
+  .options input[type="color"] {
+    width: 40px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: none;
+    cursor: pointer;
+  }
 
-    .input-section textarea {
-        width: 100%;
-        resize: vertical;
-        font-family: 'JetBrains Mono', monospace;
-    }
+  .value {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+  }
 
-    .char-count {
-        text-align: right;
-        font-size: 0.8rem;
-        color: var(--text-muted);
-        margin-top: 0.5rem;
-    }
+  .tip {
+    margin-top: var(--sp-3);
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+  }
 
-    .main-content {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1.5rem;
-    }
+  .stage {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--sp-4);
+  }
 
-    .options-section, .preview-section {
-        padding: 1rem;
-        background: var(--bg-dark);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-    }
+  .stage img {
+    border-radius: var(--radius-sm);
+  }
 
-    .options-section h3, .preview-section h3 {
-        font-size: 0.95rem;
-        margin-bottom: 1rem;
-    }
+  .placeholder {
+    color: var(--color-text-muted);
+    font-size: var(--fs-md);
+  }
 
-    .option-group {
-        margin-bottom: 1.25rem;
-    }
-
-    .option-group:last-child {
-        margin-bottom: 0;
-    }
-
-    .option-group-title {
-        display: block;
-        font-size: 0.85rem;
-        color: var(--text-secondary);
-        margin-bottom: 0.5rem;
-    }
-
-    .size-options, .level-options {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    .size-btn, .level-btn {
-        flex: 1;
-        padding: 0.5rem !important;
-        font-size: 0.85rem !important;
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border) !important;
-    }
-
-    .size-btn:hover, .level-btn:hover {
-        border-color: var(--primary) !important;
-        transform: none !important;
-        box-shadow: none !important;
-    }
-
-    .size-btn.active, .level-btn.active {
-        background: var(--primary) !important;
-        border-color: var(--primary) !important;
-        color: white !important;
-    }
-
-    .color-options {
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-    }
-
-    .color-input {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    }
-
-    .color-input span {
-        min-width: 60px;
-        font-size: 0.85rem;
-        color: var(--text-secondary);
-    }
-
-    .color-input input[type="color"] {
-        width: 40px;
-        height: 32px;
-        padding: 0 !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 4px !important;
-        cursor: pointer;
-    }
-
-    .color-input code {
-        font-size: 0.85rem;
-        background: transparent !important;
-        padding: 0 !important;
-        color: var(--text-muted);
-    }
-
-    .preview-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1rem;
-    }
-
-    .preview-header h3 {
-        margin-bottom: 0;
-    }
-
-    .size-badge {
-        font-size: 0.8rem;
-        padding: 0.25rem 0.75rem;
-        background: var(--bg-card);
-        border-radius: 100px;
-        color: var(--text-muted);
-    }
-
-    .qr-preview {
-        display: flex;
-        justify-content: center;
-        padding: 1rem;
-        background: white;
-        border-radius: var(--radius-sm);
-        margin-bottom: 1rem;
-    }
-
-    .qr-preview img {
-        max-width: 100%;
-        height: auto;
-    }
-
-    .empty-preview {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 200px;
-        color: var(--text-muted);
-        background: var(--bg-card);
-        border-radius: var(--radius-sm);
-    }
-
-    .action-buttons {
-        display: flex;
-        gap: 0.75rem;
-    }
-
-    .action-btn {
-        flex: 1;
-        padding: 0.75rem !important;
-        font-weight: 500 !important;
-    }
-
-    .action-btn.primary {
-        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%) !important;
-    }
-
-    .action-btn.secondary {
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border) !important;
-    }
-
-    .info-section {
-        padding: 1rem;
-        background: var(--bg-dark);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-    }
-
-    .info-section h3 {
-        font-size: 0.9rem;
-        margin-bottom: 0.75rem;
-        color: var(--text-secondary);
-    }
-
-    .format-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-        gap: 0.5rem;
-    }
-
-    .format-item {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        padding: 0.5rem 0.75rem;
-        background: var(--bg-card);
-        border-radius: var(--radius-sm);
-    }
-
-    .format-type {
-        font-size: 0.85rem;
-        color: var(--accent);
-        min-width: 50px;
-    }
-
-    .format-item code {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-        background: transparent !important;
-        padding: 0 !important;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    @media (max-width: 768px) {
-        .main-content {
-            grid-template-columns: 1fr;
-        }
-    }
+  .error {
+    color: var(--color-danger);
+    font-size: var(--fs-sm);
+    text-align: center;
+  }
 </style>

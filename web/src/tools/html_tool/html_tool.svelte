@@ -1,372 +1,274 @@
 <script lang="ts">
-  // HTML工具组件 - 提供HTML格式化、压缩、编辑预览等功能
-  
-  // 响应式状态变量
-  let htmlInput = $state("");
-  let htmlOutput = $state("");
-  let activeTab = $state("format"); // 'format', 'minify', 'preview'
-  
-  // 格式化HTML
-  function formatHtml() {
+  import Button from "../../lib/ui/Button.svelte";
+  import CopyButton from "../../lib/ui/CopyButton.svelte";
+  import Panel from "../../lib/ui/Panel.svelte";
+  import SplitPane from "../../lib/ui/SplitPane.svelte";
+  import Tabs from "../../lib/ui/Tabs.svelte";
+  import TextArea from "../../lib/ui/TextArea.svelte";
+  import EmptyState from "../../lib/ui/EmptyState.svelte";
+
+  type Mode = "format" | "minify" | "preview";
+
+  let input = $state("");
+  let mode = $state<Mode>("format");
+  let indentSize = $state("2");
+
+  /** HTML 空元素：不能有闭合标签，也不能写成自闭合的 `<div />` 形式。 */
+  const VOID_ELEMENTS = new Set([
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+  ]);
+
+  /** 这些元素内部的文本必须原样保留，缩进会改变其语义。 */
+  const RAW_TEXT_ELEMENTS = new Set(["pre", "script", "style", "textarea"]);
+
+  function escapeAttr(value: string): string {
+    return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  }
+
+  function formatHtml(source: string, indent: number): { output: string; error: string } {
+    if (!source.trim()) return { output: "", error: "" };
     try {
-      // 使用DOMParser解析HTML
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(htmlInput, "text/html");
-      
-      // 检查解析错误
-      const errors = doc.getElementsByTagName("parsererror");
-      if (errors.length > 0) {
-        throw new Error("HTML解析错误");
+      const doc = new DOMParser().parseFromString(source, "text/html");
+      if (doc.getElementsByTagName("parsererror").length > 0) {
+        return { output: "", error: "HTML 解析失败" };
       }
-      
-      // 格式化输出HTML
-      const serializer = new XMLSerializer();
-      let formatted = "";
-      
-      // 格式化处理（简单实现）
-      const formatNode = (node: Node, level: number): void => {
-        const indent = "  ".repeat(level);
-        
+
+      const unit = " ".repeat(indent);
+      const lines: string[] = [];
+
+      const walk = (node: Node, level: number): void => {
+        const pad = unit.repeat(level);
+
         if (node.nodeType === Node.TEXT_NODE) {
-          const text = node.textContent?.trim() || "";
-          if (text) {
-            formatted += `${indent}${text}\n`;
-          }
+          const text = node.textContent?.trim();
+          if (text) lines.push(pad + text);
           return;
         }
-        
-        if (node.nodeType === Node.ELEMENT_NODE) {
-          const element = node as Element;
-          formatted += `${indent}<${element.tagName.toLowerCase()}`;
-          
-          // 添加属性
-          for (let i = 0; i < element.attributes.length; i++) {
-            const attr = element.attributes[i];
-            formatted += ` ${attr.name}="${attr.value}"`;
-          }
-          
-          if (node.childNodes.length === 0) {
-            formatted += " />\n";
-          } else {
-            formatted += ">\n";
-            
-            // 处理子节点
-            for (let i = 0; i < node.childNodes.length; i++) {
-              formatNode(node.childNodes[i], level + 1);
-            }
-            
-            formatted += `${indent}</${element.tagName.toLowerCase()}>\n`;
-          }
+
+        if (node.nodeType === Node.COMMENT_NODE) {
+          lines.push(`${pad}<!--${node.textContent ?? ""}-->`);
+          return;
         }
+
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+        const element = node as Element;
+        const tag = element.tagName.toLowerCase();
+        let open = `${pad}<${tag}`;
+        for (const attr of Array.from(element.attributes)) {
+          open += ` ${attr.name}="${escapeAttr(attr.value)}"`;
+        }
+        open += ">";
+
+        if (VOID_ELEMENTS.has(tag)) {
+          lines.push(open);
+          return;
+        }
+
+        if (RAW_TEXT_ELEMENTS.has(tag)) {
+          // 原样保留内部文本，只把整块按当前层级缩进
+          const raw = (element.textContent ?? "").replace(/^\n+|\s+$/g, "");
+          lines.push(open);
+          if (raw) {
+            for (const line of raw.split("\n")) lines.push(pad + unit + line.trim());
+          }
+          lines.push(`${pad}</${tag}>`);
+          return;
+        }
+
+        if (element.childNodes.length === 0) {
+          lines.push(`${open}</${tag}>`);
+          return;
+        }
+
+        lines.push(open);
+        for (const child of Array.from(element.childNodes)) walk(child, level + 1);
+        lines.push(`${pad}</${tag}>`);
       };
-      
-      // 处理主体内容，从body节点开始
-      if (doc.body) {
-        for (let i = 0; i < doc.body.childNodes.length; i++) {
-          formatNode(doc.body.childNodes[i], 0);
-        }
+
+      // 输入是完整文档时从 <html> 开始，否则只输出 body 内容 —— 旧版一律只取 body，
+      // 会把 <head> 里的 meta/style 全部丢掉。
+      const isFullDocument = /<html[\s>]/i.test(source);
+      if (isFullDocument) {
+        if (/<!doctype/i.test(source)) lines.push("<!DOCTYPE html>");
+        walk(doc.documentElement, 0);
+      } else {
+        for (const child of Array.from(doc.body.childNodes)) walk(child, 0);
       }
-      
-      htmlOutput = formatted || "格式化后的HTML将显示在这里";
-    } catch (error: any) {
-      htmlOutput = `错误: ${error.message}`;
+
+      return { output: lines.join("\n"), error: "" };
+    } catch (err) {
+      return { output: "", error: err instanceof Error ? err.message : String(err) };
     }
   }
-  
-  // 压缩HTML
-  function minifyHtml() {
-    try {
-      // 移除空格和换行
-      let minified = htmlInput
-        .replace(/\s+/g, " ")              // 将多个空格替换为单个空格
-        .replace(/>\s+</g, "><")           // 移除标签之间的空格
-        .replace(/<!--.*?-->/gs, "")       // 移除注释
-        .replace(/^\s+|\s+$/g, "");        // 移除首尾空格
-        
-      htmlOutput = minified || "压缩后的HTML将显示在这里";
-    } catch (error: any) {
-      htmlOutput = `错误: ${error.message}`;
-    }
+
+  function minifyHtml(source: string): string {
+    return source
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/\s+/g, " ")
+      .replace(/>\s+</g, "><")
+      .trim();
   }
-  
-  // 处理按钮点击
-  function processHtml() {
-    if (activeTab === "format") {
-      formatHtml();
-    } else if (activeTab === "minify") {
-      minifyHtml();
+
+  const result = $derived.by(() => {
+    if (mode === "minify") return { output: minifyHtml(input), error: "" };
+    if (mode === "format") {
+      return formatHtml(input, Number.parseInt(indentSize, 10) || 2);
     }
-  }
-  
-  // 处理示例数据
+    return { output: "", error: "" };
+  });
+
   function loadExample() {
-    htmlInput = `<!DOCTYPE html>
+    input = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HTML示例</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-        .header {
-            background-color: #f5f5f5;
-            padding: 20px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-        }
-        .content {
-            line-height: 1.6;
-        }
-    </style>
+<meta charset="UTF-8">
+<title>HTML示例</title>
+<style>body { font-family: sans-serif; padding: 20px; }</style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>HTML示例页面</h1>
-            <p>这是一个简单的HTML示例，用于测试格式化和压缩功能。</p>
-        </div>
-        <div class="content">
-            <h2>功能列表</h2>
-            <ul>
-                <li>HTML格式化</li>
-                <li>HTML压缩</li>
-                <li>HTML预览</li>
-            </ul>
-            <p>更多信息请访问 <a href="https://developer.mozilla.org/zh-CN/docs/Web/HTML">MDN HTML文档</a></p>
-        </div>
-    </div>
+<div class="container"><h1>HTML示例页面</h1><p>用于测试格式化与压缩。</p>
+<ul><li>格式化</li><li>压缩</li><li>预览</li></ul>
+<img src="x.png" alt="示例"><br>
+</div>
 </body>
 </html>`;
   }
-  
-  // 复制到剪贴板
-  async function copyToClipboard() {
-    try {
-      await navigator.clipboard.writeText(htmlOutput);
-      alert("已复制到剪贴板");
-    } catch (err) {
-      alert("复制失败: " + err);
-    }
-  }
-  
-  // 清空输入
-  function clearInput() {
-    htmlInput = "";
-    htmlOutput = "";
-  }
 </script>
 
-<div class="html-tool">
-  <div class="tab-container">
-    <div class="tabs">
-      <button 
-        class:active={activeTab === "format"} 
-        onclick={() => activeTab = "format"}
-      >
-        格式化HTML
-      </button>
-      <button 
-        class:active={activeTab === "minify"} 
-        onclick={() => activeTab = "minify"}
-      >
-        压缩HTML
-      </button>
-      <button 
-        class:active={activeTab === "preview"} 
-        onclick={() => activeTab = "preview"}
-      >
-        HTML预览
-      </button>
-    </div>
+<div class="tool">
+  <div class="toolbar">
+    <Tabs
+      bind:value={mode}
+      tabs={[
+        { value: "format", label: "格式化" },
+        { value: "minify", label: "压缩" },
+        { value: "preview", label: "预览" },
+      ]}
+      ariaLabel="处理模式"
+    />
+
+    {#if mode === "format"}
+      <label class="indent">
+        缩进
+        <select bind:value={indentSize} aria-label="缩进空格数">
+          <option value="2">2 空格</option>
+          <option value="4">4 空格</option>
+        </select>
+      </label>
+    {/if}
+
+    <div class="spacer"></div>
+    <Button size="sm" onclick={loadExample}>示例</Button>
+    <Button size="sm" variant="ghost" onclick={() => (input = "")}>清空</Button>
   </div>
-  
-  <div class="tool-container">
-    <div class="input-area">
-      <div class="textarea-header">
-        <h3>HTML输入</h3>
-        <div class="button-group">
-          <button class="action-button" onclick={loadExample}>加载示例</button>
-          <button class="action-button" onclick={clearInput}>清空</button>
-        </div>
-      </div>
-      <textarea
-        bind:value={htmlInput}
-        placeholder="请输入HTML代码..."
-        rows="15"
-      ></textarea>
-    </div>
-    
-    <div class="action-area">
-      {#if activeTab !== "preview"}
-        <button class="process-button" onclick={processHtml}>
-          {activeTab === "format" ? "格式化" : "压缩"}
-        </button>
-      {/if}
-    </div>
-    
-    <div class="output-area">
-      <div class="textarea-header">
-        <h3>
-          {#if activeTab === "format"}
-            格式化输出
-          {:else if activeTab === "minify"}
-            压缩输出
+
+  <SplitPane>
+    {#snippet left()}
+      <Panel title="HTML 输入" grow>
+        {#snippet actions()}
+          <span class="count">{input.length} 字符</span>
+        {/snippet}
+        <TextArea bind:value={input} fill placeholder="在此粘贴 HTML…" ariaLabel="HTML 输入" />
+      </Panel>
+    {/snippet}
+
+    {#snippet right()}
+      {#if mode === "preview"}
+        <Panel title="预览" grow flush>
+          {#if input.trim()}
+            <!-- sandbox 置空：禁用脚本与表单提交，预览不会在应用源里执行任何代码 -->
+            <iframe class="preview" title="HTML 预览" sandbox="" srcdoc={input}></iframe>
           {:else}
-            HTML预览
+            <EmptyState icon="</>" title="预览会显示在这里" hint="脚本在预览中被禁用" />
           {/if}
-        </h3>
-        {#if activeTab !== "preview" && htmlOutput}
-          <button class="action-button" onclick={copyToClipboard}>复制</button>
-        {/if}
-      </div>
-      
-      {#if activeTab === "preview"}
-        <div class="preview-container">
-          {@html htmlInput}
-        </div>
+        </Panel>
       {:else}
-        <textarea
-          value={htmlOutput}
-          placeholder={activeTab === "format" ? "格式化后的HTML将显示在这里" : "压缩后的HTML将显示在这里"}
-          rows="15"
-          readonly
-        ></textarea>
+        <Panel title={mode === "format" ? "格式化输出" : "压缩输出"} grow>
+          {#snippet actions()}
+            {#if result.output && mode === "minify"}
+              <span class="count">
+                {Math.max(0, Math.round((1 - result.output.length / Math.max(1, input.length)) * 100))}% ↓
+              </span>
+            {/if}
+            <CopyButton value={() => result.output} disabled={!result.output} />
+          {/snippet}
+          <TextArea
+            value={result.output}
+            fill
+            readonly
+            invalid={!!result.error}
+            placeholder="处理结果将显示在这里…"
+            ariaLabel="输出"
+          />
+        </Panel>
       {/if}
-    </div>
-  </div>
+    {/snippet}
+  </SplitPane>
+
+  {#if result.error}
+    <p class="error">{result.error}</p>
+  {/if}
 </div>
 
 <style>
-  .html-tool {
-    width: 100%;
-    max-width: 100%;
-    margin: 0 auto;
-  }
-  
-  .tab-container {
-    margin-bottom: 1.5rem;
-  }
-  
-  .tabs {
-    display: flex;
-    border-bottom: 2px solid #eee;
-  }
-  
-  .tabs button {
-    padding: 0.75rem 1.5rem;
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -2px;
-    cursor: pointer;
-    font-weight: 600;
-    transition: all 0.3s ease;
-  }
-  
-  .tabs button:hover {
-    background: rgba(99, 102, 241, 0.05);
-  }
-  
-  .tabs button.active {
-    color: var(--primary-color);
-    border-bottom: 2px solid var(--primary-color);
-  }
-  
-  .tool-container {
+  .tool {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--sp-3);
+    flex: 1;
+    min-height: 0;
   }
-  
-  .input-area, .output-area {
-    width: 100%;
-  }
-  
-  .textarea-header {
+
+  .toolbar {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
   }
-  
-  .textarea-header h3 {
-    margin: 0;
-    font-size: 1rem;
+
+  .spacer {
+    flex: 1;
   }
-  
-  textarea {
+
+  .indent {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .indent select {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    padding: 0.25rem var(--sp-2);
+    font-size: var(--fs-sm);
+  }
+
+  .count {
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+  }
+
+  .preview {
+    flex: 1;
     width: 100%;
-    padding: 1rem;
-    border: 1px solid #ddd;
-    border-radius: var(--border-radius);
-    font-family: monospace;
-    resize: none;
-    background: var(--card-bg);
-    color: var(--text-color);
-  }
-  
-  .action-area {
-    display: flex;
-    justify-content: center;
-    margin: 1rem 0;
-  }
-  
-  .process-button {
-    padding: 0.75rem 1.5rem;
-    background: var(--primary-color);
-    color: white;
     border: none;
-    border-radius: var(--border-radius);
-    cursor: pointer;
-    font-weight: 600;
-    transition: all 0.3s ease;
+    /* 预览的是完整网页，白底是它本来的样子，不跟随应用主题 */
+    background: #fff;
   }
-  
-  .process-button:hover {
-    background: var(--primary-light);
+
+  .error {
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid var(--color-danger-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-danger-bg);
+    color: var(--color-danger);
+    font-size: var(--fs-sm);
   }
-  
-  .action-button {
-    padding: 0.5rem 1rem;
-    background: transparent;
-    border: 1px solid #ddd;
-    border-radius: var(--border-radius);
-    cursor: pointer;
-    font-size: 0.875rem;
-    transition: all 0.3s ease;
-  }
-  
-  .action-button:hover {
-    background: rgba(99, 102, 241, 0.1);
-  }
-  
-  .button-group {
-    display: flex;
-    gap: 0.5rem;
-  }
-  
-  .preview-container {
-    padding: 1rem;
-    border: 1px solid #ddd;
-    border-radius: var(--border-radius);
-    min-height: 400px;
-    overflow: auto;
-    background: white;
-    color: black;
-  }
-  
-  @media (prefers-color-scheme: dark) {
-    .preview-container {
-      background: white;
-      color: black;
-    }
-  }
-</style> 
+</style>

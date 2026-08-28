@@ -1,399 +1,294 @@
 <script lang="ts">
-    let base64Result = $state("");
-    let fileName = $state("");
-    let fileSize = $state(0);
-    let fileType = $state("");
-    let previewUrl = $state("");
-    let copied = $state(false);
-    let isDragging = $state(false);
-    let fileInputEl = $state<HTMLInputElement | null>(null);
+  import Button from "../../lib/ui/Button.svelte";
+  import CopyButton from "../../lib/ui/CopyButton.svelte";
+  import DropZone from "../../lib/ui/DropZone.svelte";
+  import Panel from "../../lib/ui/Panel.svelte";
+  import SplitPane from "../../lib/ui/SplitPane.svelte";
+  import Tabs from "../../lib/ui/Tabs.svelte";
+  import TextArea from "../../lib/ui/TextArea.svelte";
+  import { formatFileSize } from "../../lib/format";
+  import { toast } from "../../lib/toast.svelte";
 
-    function handleFileChange(event: Event) {
-        const fileInput = event.target as HTMLInputElement;
-        if (fileInput.files?.[0]) {
-            processFile(fileInput.files[0]);
-        }
+  let source = $state<"text" | "file">("text");
+  let mode = $state<"encode" | "decode">("encode");
+  let urlSafe = $state(false);
+  let input = $state("");
+
+  // ── 文本 ⇄ Base64 ──
+  // 用 TextEncoder 而不是 btoa(text)：btoa 只接受 Latin-1，中文会直接抛异常
+  function encodeText(text: string): string {
+    const bytes = new TextEncoder().encode(text);
+    let binary = "";
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
     }
+    const encoded = btoa(binary);
+    return urlSafe ? encoded.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") : encoded;
+  }
 
-    function handleDrop(event: DragEvent) {
-        event.preventDefault();
-        isDragging = false;
-        const file = event.dataTransfer?.files[0];
-        if (file && file.type.startsWith('image/')) {
-            processFile(file);
-        }
+  function decodeText(encoded: string): string {
+    let normalized = encoded.trim().replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/");
+    while (normalized.length % 4 !== 0) normalized += "=";
+    const binary = atob(normalized);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    // fatal 让非法 UTF-8 直接报错，而不是静默产出乱码
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  }
+
+  const textResult = $derived.by(() => {
+    if (!input.trim()) return { text: "", error: "" };
+    try {
+      return { text: mode === "encode" ? encodeText(input) : decodeText(input), error: "" };
+    } catch (err) {
+      return {
+        text: "",
+        error: mode === "decode" ? "不是合法的 Base64 或不是 UTF-8 文本" : String(err),
+      };
     }
+  });
 
-    function handleDragOver(event: DragEvent) {
-        event.preventDefault();
-        isDragging = true;
+  // ── 文件 → Base64 ──
+  interface FileResult {
+    name: string;
+    size: number;
+    type: string;
+    dataUrl: string;
+  }
+
+  let file = $state<FileResult | null>(null);
+  let reading = $state(false);
+
+  const MAX_FILE_BYTES = 20 * 1024 * 1024;
+
+  function readFile(files: File[]) {
+    const picked = files[0];
+    if (!picked) return;
+    if (picked.size > MAX_FILE_BYTES) {
+      toast.error(`文件超过 ${formatFileSize(MAX_FILE_BYTES)}，Base64 会膨胀约 33%，已拒绝`);
+      return;
     }
+    reading = true;
+    const reader = new FileReader();
+    reader.onload = () => {
+      file = {
+        name: picked.name,
+        size: picked.size,
+        type: picked.type || "application/octet-stream",
+        dataUrl: String(reader.result ?? ""),
+      };
+      reading = false;
+    };
+    reader.onerror = () => {
+      reading = false;
+      toast.error("读取文件失败");
+    };
+    reader.readAsDataURL(picked);
+  }
 
-    function handleDragLeave() {
-        isDragging = false;
-    }
-
-    function processFile(file: File) {
-        fileName = file.name;
-        fileSize = file.size;
-        fileType = file.type;
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const result = e.target?.result as string;
-            base64Result = result;
-            previewUrl = result;
-        };
-        reader.readAsDataURL(file);
-    }
-
-    async function copyToClipboard() {
-        if (base64Result) {
-            try {
-                await navigator.clipboard.writeText(base64Result);
-                copied = true;
-                setTimeout(() => copied = false, 1500);
-            } catch (err) {
-                console.error('复制失败:', err);
-            }
-        }
-    }
-
-    function clearFile() {
-        base64Result = "";
-        fileName = "";
-        fileSize = 0;
-        fileType = "";
-        previewUrl = "";
-    }
-
-    function formatFileSize(bytes: number): string {
-        if (bytes < 1024) return bytes + ' B';
-        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
-        return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
-    }
-
-    function openFileDialog() {
-        fileInputEl?.click();
-    }
-
-    function handleUploadAreaKeydown(event: KeyboardEvent) {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        openFileDialog();
-    }
+  const rawBase64 = $derived(file ? file.dataUrl.slice(file.dataUrl.indexOf(",") + 1) : "");
+  const isImage = $derived(!!file && file.type.startsWith("image/"));
 </script>
 
-<div class="base64-tool">
-    <div 
-        class="upload-area"
-        class:dragging={isDragging}
-        class:has-file={!!fileName}
-        ondrop={handleDrop}
-        ondragover={handleDragOver}
-        ondragleave={handleDragLeave}
-        onclick={openFileDialog}
-        onkeydown={handleUploadAreaKeydown}
-        role="button"
-        tabindex="0"
-    >
-        <input 
-            bind:this={fileInputEl}
-            type="file" 
-            accept="image/*" 
-            onchange={handleFileChange}
-            hidden
-        />
-        
-        {#if fileName}
-            <div class="file-preview">
-                {#if previewUrl}
-                    <img src={previewUrl} alt="预览" class="preview-image" />
-                {/if}
-                <div class="file-info">
-                    <span class="file-name">{fileName}</span>
-                    <span class="file-meta">
-                        {fileType} · {formatFileSize(fileSize)}
-                    </span>
-                </div>
-            </div>
-            <button class="clear-btn" onclick={(e) => { e.stopPropagation(); clearFile(); }}>
-                ✕ 清除
-            </button>
-        {:else}
-            <div class="upload-hint">
-                <span class="upload-icon">🖼️</span>
-                <span class="upload-text">点击或拖放图片到此处</span>
-                <span class="upload-formats">支持 JPG, PNG, GIF, WebP, SVG 等格式</span>
-            </div>
-        {/if}
-    </div>
+<div class="tool">
+  <div class="toolbar">
+    <Tabs
+      bind:value={source}
+      tabs={[
+        { value: "text", label: "文本" },
+        { value: "file", label: "文件 / 图片" },
+      ]}
+      ariaLabel="输入来源"
+    />
 
-    {#if base64Result}
-        <div class="result-section">
-            <div class="result-header">
-                <div class="result-info">
-                    <h3>Base64 编码结果</h3>
-                    <span class="result-size">
-                        {base64Result.length.toLocaleString()} 字符
-                        (约 {formatFileSize(base64Result.length)})
-                    </span>
-                </div>
-                <button class="copy-btn" onclick={copyToClipboard}>
-                    {copied ? '✓ 已复制' : '📋 复制 Base64'}
-                </button>
-            </div>
-            <textarea 
-                readonly 
-                value={base64Result}
-                class="result-textarea"
-            ></textarea>
-        </div>
-
-        <div class="usage-section">
-            <h3>使用示例</h3>
-            <div class="usage-grid">
-                <div class="usage-card">
-                    <h4>HTML</h4>
-                    <code>&lt;img src="{base64Result.substring(0, 50)}..." /&gt;</code>
-                </div>
-                <div class="usage-card">
-                    <h4>CSS</h4>
-                    <code>background-image: url({base64Result.substring(0, 50)}...);</code>
-                </div>
-            </div>
-        </div>
+    {#if source === "text"}
+      <Tabs
+        bind:value={mode}
+        size="sm"
+        tabs={[
+          { value: "encode", label: "编码" },
+          { value: "decode", label: "解码" },
+        ]}
+        ariaLabel="编解码方向"
+      />
+      <label class="check">
+        <input type="checkbox" bind:checked={urlSafe} />
+        URL-safe
+      </label>
     {/if}
 
-    <div class="info-section">
-        <h3>关于 Base64 编码</h3>
-        <ul>
-            <li><strong>用途</strong>：将图片转换为文本格式，可直接嵌入 HTML/CSS</li>
-            <li><strong>优点</strong>：减少 HTTP 请求，适合小图片和图标</li>
-            <li><strong>缺点</strong>：编码后体积增大约 33%，不适合大图片</li>
-            <li><strong>建议</strong>：图片小于 10KB 时使用 Base64 效果较好</li>
-        </ul>
-    </div>
+    <div class="spacer"></div>
+
+    {#if source === "text"}
+      <Button size="sm" variant="ghost" onclick={() => (input = "")}>清空</Button>
+    {:else if file}
+      <Button size="sm" variant="ghost" onclick={() => (file = null)}>移除文件</Button>
+    {/if}
+  </div>
+
+  {#if source === "text"}
+    <SplitPane>
+      {#snippet left()}
+        <Panel title={mode === "encode" ? "原文" : "Base64"} grow>
+          {#snippet actions()}
+            <span class="count">{input.length} 字符</span>
+          {/snippet}
+          <TextArea
+            bind:value={input}
+            fill
+            placeholder={mode === "encode" ? "输入要编码的文本…" : "粘贴 Base64…"}
+            ariaLabel="输入"
+          />
+        </Panel>
+      {/snippet}
+
+      {#snippet right()}
+        <Panel title={mode === "encode" ? "Base64" : "原文"} grow>
+          {#snippet actions()}
+            <span class="count">{textResult.text.length} 字符</span>
+            <CopyButton value={() => textResult.text} disabled={!textResult.text} />
+          {/snippet}
+          <TextArea
+            value={textResult.text}
+            fill
+            readonly
+            invalid={!!textResult.error}
+            placeholder="结果将显示在这里…"
+            ariaLabel="输出"
+          />
+        </Panel>
+      {/snippet}
+    </SplitPane>
+
+    {#if textResult.error}
+      <p class="error">{textResult.error}</p>
+    {/if}
+  {:else}
+    <SplitPane>
+      {#snippet left()}
+        <Panel title="选择文件" grow>
+          <DropZone
+            onfiles={readFile}
+            disabled={reading}
+            hint={reading ? "读取中…" : "拖拽任意文件到此处，或点击选择"}
+          />
+          {#if file}
+            <dl class="meta">
+              <div><dt>文件名</dt><dd>{file.name}</dd></div>
+              <div><dt>类型</dt><dd>{file.type}</dd></div>
+              <div><dt>原始大小</dt><dd>{formatFileSize(file.size)}</dd></div>
+              <div><dt>Base64 后</dt><dd>{formatFileSize(rawBase64.length)}</dd></div>
+            </dl>
+            {#if isImage}
+              <img class="preview" src={file.dataUrl} alt="预览：{file.name}" />
+            {/if}
+          {/if}
+        </Panel>
+      {/snippet}
+
+      {#snippet right()}
+        <Panel title="Data URL" grow>
+          {#snippet actions()}
+            <CopyButton value={() => rawBase64} label="仅 Base64" disabled={!file} />
+            <CopyButton value={() => file?.dataUrl ?? ""} label="复制 Data URL" disabled={!file} />
+          {/snippet}
+          <TextArea
+            value={file?.dataUrl ?? ""}
+            fill
+            readonly
+            placeholder="选择文件后显示 data:… 形式的完整 URL"
+            ariaLabel="Data URL"
+          />
+        </Panel>
+      {/snippet}
+    </SplitPane>
+  {/if}
 </div>
 
 <style>
-    .base64-tool {
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-    }
+  .tool {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    flex: 1;
+    min-height: 0;
+  }
 
-    .upload-area {
-        position: relative;
-        border: 2px dashed var(--border);
-        border-radius: var(--radius-sm);
-        padding: 2rem;
-        text-align: center;
-        cursor: pointer;
-        transition: all 0.2s;
-        min-height: 200px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-    }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+  }
 
-    .upload-area:hover {
-        border-color: var(--primary);
-        background: var(--bg-hover);
-    }
+  .spacer {
+    flex: 1;
+  }
 
-    .upload-area.dragging {
-        border-color: var(--accent);
-        background: rgba(34, 211, 238, 0.1);
-    }
+  .check {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-sm);
+    color: var(--color-text-secondary);
+  }
 
-    .upload-area.has-file {
-        border-style: solid;
-        padding: 1rem;
-    }
+  .check input {
+    accent-color: var(--color-primary);
+  }
 
-    .upload-hint {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.75rem;
-    }
+  .count {
+    font-size: var(--fs-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+  }
 
-    .upload-icon {
-        font-size: 3rem;
-    }
+  .meta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    margin-top: var(--sp-3);
+    font-size: var(--fs-sm);
+  }
 
-    .upload-text {
-        font-size: 1.1rem;
-        color: var(--text-primary);
-        font-weight: 500;
-    }
+  .meta > div {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    padding: var(--sp-1) var(--sp-2);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+  }
 
-    .upload-formats {
-        font-size: 0.85rem;
-        color: var(--text-muted);
-    }
+  dt {
+    color: var(--color-text-muted);
+  }
 
-    .file-preview {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        width: 100%;
-    }
+  dd {
+    font-family: var(--font-mono);
+    color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 
-    .preview-image {
-        width: 80px;
-        height: 80px;
-        object-fit: cover;
-        border-radius: var(--radius-sm);
-        border: 1px solid var(--border);
-    }
+  .preview {
+    margin-top: var(--sp-3);
+    max-width: 100%;
+    max-height: 220px;
+    object-fit: contain;
+    align-self: center;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-2);
+  }
 
-    .file-info {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-        text-align: left;
-    }
-
-    .file-name {
-        font-weight: 500;
-        color: var(--text-primary);
-    }
-
-    .file-meta {
-        font-size: 0.85rem;
-        color: var(--text-muted);
-    }
-
-    .clear-btn {
-        position: absolute;
-        top: 1rem;
-        right: 1rem;
-        padding: 0.4rem 0.85rem !important;
-        font-size: 0.85rem !important;
-        background: var(--bg-dark) !important;
-        border: 1px solid var(--border) !important;
-    }
-
-    .result-section {
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        overflow: hidden;
-    }
-
-    .result-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 1rem;
-        background: var(--bg-dark);
-        border-bottom: 1px solid var(--border);
-    }
-
-    .result-info {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-    }
-
-    .result-info h3 {
-        font-size: 0.95rem;
-        margin: 0;
-    }
-
-    .result-size {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-    }
-
-    .copy-btn {
-        padding: 0.65rem 1.25rem !important;
-        font-weight: 500 !important;
-    }
-
-    .result-textarea {
-        width: 100%;
-        min-height: 200px;
-        border: none !important;
-        border-radius: 0 !important;
-        resize: vertical;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.85rem;
-        background: var(--bg-dark) !important;
-        color: var(--accent);
-        padding: 1rem;
-    }
-
-    .usage-section {
-        padding: 1rem;
-        background: var(--bg-dark);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-    }
-
-    .usage-section h3 {
-        font-size: 0.9rem;
-        margin-bottom: 0.75rem;
-        color: var(--text-secondary);
-    }
-
-    .usage-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 0.75rem;
-    }
-
-    .usage-card {
-        padding: 0.75rem;
-        background: var(--bg-card);
-        border-radius: var(--radius-sm);
-    }
-
-    .usage-card h4 {
-        font-size: 0.85rem;
-        margin-bottom: 0.5rem;
-        color: var(--accent);
-    }
-
-    .usage-card code {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-        word-break: break-all;
-        display: block;
-        background: transparent !important;
-        padding: 0 !important;
-    }
-
-    .info-section {
-        padding: 1rem;
-        background: var(--bg-dark);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-    }
-
-    .info-section h3 {
-        font-size: 0.9rem;
-        margin-bottom: 0.75rem;
-        color: var(--text-secondary);
-    }
-
-    .info-section ul {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .info-section li {
-        font-size: 0.85rem;
-        color: var(--text-muted);
-    }
-
-    .info-section li strong {
-        color: var(--accent);
-    }
+  .error {
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid var(--color-danger-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-danger-bg);
+    color: var(--color-danger);
+    font-size: var(--fs-sm);
+  }
 </style>

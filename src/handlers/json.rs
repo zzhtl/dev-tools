@@ -37,8 +37,9 @@ fn parse_to_value(input: &str, from: &str) -> Result<Value, AppError> {
             .map_err(|e| AppError::bad_request(format!("JSON 解析错误: {e}"))),
         "yaml" => serde_yaml::from_str(input)
             .map_err(|e| AppError::bad_request(format!("YAML 解析错误: {e}"))),
-        "toml" => toml::from_str(input)
-            .map_err(|e| AppError::bad_request(format!("TOML 解析错误: {e}"))),
+        "toml" => {
+            toml::from_str(input).map_err(|e| AppError::bad_request(format!("TOML 解析错误: {e}")))
+        }
         "csv" => csv_to_value(input),
         "xml" => xml_to_value(input),
         other => Err(AppError::bad_request(format!("不支持的源格式: {other}"))),
@@ -350,7 +351,11 @@ pub async fn schema(Json(req): Json<SchemaRequest>) -> Result<Json<SchemaRespons
                 .map(|e| {
                     let path = e.instance_path().to_string();
                     SchemaErrorItem {
-                        path: if path.is_empty() { "(根)".to_string() } else { path },
+                        path: if path.is_empty() {
+                            "(根)".to_string()
+                        } else {
+                            path
+                        },
                         message: e.to_string(),
                     }
                 })
@@ -433,7 +438,7 @@ pub async fn query(Json(req): Json<QueryRequest>) -> Result<Json<QueryResponse>,
     }
     let result = match req.engine.as_str() {
         "jsonpath" => run_jsonpath(&req.json, &req.expr)?,
-        "jq" => run_jq(&req.json, &req.expr)?,
+        "jq" => run_jq(req.json, req.expr).await?,
         other => return Err(AppError::bad_request(format!("不支持的查询引擎: {other}"))),
     };
     Ok(Json(QueryResponse { result }))
@@ -448,20 +453,41 @@ fn run_jsonpath(json: &str, expr: &str) -> Result<String, AppError> {
     to_json_pretty(&Value::Array(nodes), 2)
 }
 
-fn run_jq(json: &str, expr: &str) -> Result<String, AppError> {
+/// jq 执行上限。jaq 没有协作式取消，只能在产出每条结果时检查 deadline；
+/// 像 `[range(1e9)]` 这种在单条结果内部构造巨型数组的表达式仍然无法中途打断，
+/// 但至少不会再阻塞异步运行时，客户端也会拿到明确的超时响应。
+const JQ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+const JQ_MAX_OUTPUTS: usize = 10_000;
+const JQ_MAX_BYTES: usize = 4 * 1024 * 1024;
+
+async fn run_jq(json: String, expr: String) -> Result<String, AppError> {
+    // 放到阻塞线程池：jq 是同步计算，跑在 worker 上会卡住整个运行时
+    let handle = tokio::task::spawn_blocking(move || run_jq_blocking(&json, &expr));
+    match tokio::time::timeout(JQ_TIMEOUT + std::time::Duration::from_secs(2), handle).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(e)) => Err(AppError::from(anyhow::anyhow!("jq 任务执行失败: {e}"))),
+        Err(_) => Err(AppError::bad_request("jq 执行超时，请缩小表达式的输出规模")),
+    }
+}
+
+fn run_jq_blocking(json: &str, expr: &str) -> Result<String, AppError> {
     use jaq_core::load::{Arena, File, Loader};
     use jaq_core::{data, unwrap_valr, Compiler, Ctx, Vars};
     use jaq_json::{read, Val};
 
-    let input = read::parse_single(&json.as_bytes())
+    let input = read::parse_single(json.as_bytes())
         .map_err(|e| AppError::bad_request(format!("JSON 解析错误: {e:?}")))?;
 
     let program = File {
         code: expr,
         path: (),
     };
-    let defs = jaq_core::defs().chain(jaq_std::defs()).chain(jaq_json::defs());
-    let funs = jaq_core::funs().chain(jaq_std::funs()).chain(jaq_json::funs());
+    let defs = jaq_core::defs()
+        .chain(jaq_std::defs())
+        .chain(jaq_json::defs());
+    let funs = jaq_core::funs()
+        .chain(jaq_std::funs())
+        .chain(jaq_json::funs());
 
     let loader = Loader::new(defs);
     let arena = Arena::default();
@@ -476,12 +502,112 @@ fn run_jq(json: &str, expr: &str) -> Result<String, AppError> {
     let ctx = Ctx::<data::JustLut<Val>>::new(&filter.lut, Vars::new([]));
     let outputs = filter.id.run((ctx, input)).map(unwrap_valr);
 
+    let deadline = std::time::Instant::now() + JQ_TIMEOUT;
     let mut lines = Vec::new();
+    let mut bytes = 0usize;
     for out in outputs {
+        if std::time::Instant::now() > deadline {
+            return Err(AppError::bad_request("jq 执行超时，请缩小表达式的输出规模"));
+        }
+        if lines.len() >= JQ_MAX_OUTPUTS {
+            return Err(AppError::bad_request(format!(
+                "jq 输出超过 {JQ_MAX_OUTPUTS} 条，请用 limit/first 收窄结果"
+            )));
+        }
         match out {
-            Ok(val) => lines.push(val.to_string()),
+            Ok(val) => {
+                let text = val.to_string();
+                bytes += text.len();
+                if bytes > JQ_MAX_BYTES {
+                    return Err(AppError::bad_request("jq 输出体积过大，请收窄结果"));
+                }
+                lines.push(text);
+            }
             Err(e) => return Err(AppError::bad_request(format!("jq 执行错误: {e:?}"))),
         }
     }
     Ok(lines.join("\n"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn roundtrip(input: &str, via: &str) -> String {
+        let value = parse_to_value(input, "json").expect("解析 json");
+        let intermediate = serialize_value(&value, via, 2).expect("序列化中间格式");
+        let back = parse_to_value(&intermediate, via).expect("解析中间格式");
+        serialize_value(&back, "json", 2).expect("序列化回 json")
+    }
+
+    #[test]
+    fn json_yaml_roundtrip_preserves_data() {
+        let input =
+            r#"{"name":"dev-tools","port":8927,"tags":["json","dns"],"nested":{"ok":true}}"#;
+        let out = roundtrip(input, "yaml");
+        let a: serde_json::Value = serde_json::from_str(input).unwrap();
+        let b: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn json_toml_roundtrip_preserves_data() {
+        let input = r#"{"name":"dev-tools","port":8927,"nested":{"ok":true}}"#;
+        let out = roundtrip(input, "toml");
+        let a: serde_json::Value = serde_json::from_str(input).unwrap();
+        let b: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn csv_parses_into_object_array() {
+        let value = parse_to_value("name,port\ndev-tools,8927\n", "csv").unwrap();
+        let rows = value.as_array().expect("应为数组");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["name"], serde_json::json!("dev-tools"));
+    }
+
+    #[test]
+    fn toml_rejects_non_object_root_with_hint() {
+        let value = parse_to_value("[1,2,3]", "json").unwrap();
+        let err = serialize_value(&value, "toml", 2).unwrap_err();
+        assert!(
+            err.message.contains("顶层"),
+            "提示应说明顶层限制: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn indent_is_clamped() {
+        let value = parse_to_value(r#"{"a":{"b":1}}"#, "json").unwrap();
+        // 超出范围的缩进不应 panic，按上限处理
+        let out = to_json_pretty(&value, 999).unwrap();
+        assert!(out.contains('\n'));
+    }
+
+    // ── jq 防护 ──
+
+    #[test]
+    fn jq_runs_simple_expression() {
+        let out = run_jq_blocking(r#"{"a":[1,2,3]}"#, ".a | length").unwrap();
+        assert_eq!(out.trim(), "3");
+    }
+
+    #[test]
+    fn jq_rejects_unbounded_output() {
+        // 没有上限时这类表达式会一直产出直到打爆内存
+        let err = run_jq_blocking("null", "range(1000000)").unwrap_err();
+        assert!(
+            err.message.contains("输出超过") || err.message.contains("超时"),
+            "应触发输出上限或超时，实际: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn jq_reports_bad_expression_as_bad_request() {
+        let err = run_jq_blocking("null", "this is not jq |||").unwrap_err();
+        assert_eq!(err.status, axum::http::StatusCode::BAD_REQUEST);
+    }
 }
