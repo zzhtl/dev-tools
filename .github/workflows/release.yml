@@ -54,6 +54,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       DEV_TOOLS_SKIP_WEB_BUILD: "1"
+      # workflow_dispatch 时 GITHUB_REF_NAME 是分支名，必须优先取输入的 tag
+      VERSION: ${{ github.event.inputs.tag || github.ref_name }}
     strategy:
       fail-fast: false
       matrix:
@@ -103,7 +105,7 @@ jobs:
         shell: bash
         run: |
           set -eu
-          name="dev-tools-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          name="dev-tools-${VERSION}-${{ matrix.target }}"
           mkdir -p "dist-pkg/$name"
           cp "target/${{ matrix.target }}/release/dev-tools" "dist-pkg/$name/"
           cp README.md README.en.md LICENSE "dist-pkg/$name/"
@@ -115,7 +117,7 @@ jobs:
         shell: bash
         run: |
           set -eu
-          name="dev-tools-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          name="dev-tools-${VERSION}-${{ matrix.target }}"
           mkdir -p "dist-pkg/$name"
           cp "target/${{ matrix.target }}/release/dev-tools.exe" "dist-pkg/$name/"
           cp README.md README.en.md LICENSE "dist-pkg/$name/"
@@ -151,5 +153,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          # 带 - 的语义化版本（v0.3.0-rc.1）标为预发布，避免被 /releases/latest 选中
+          prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-') }}
           generate_release_notes: true
           files: artifacts/*
