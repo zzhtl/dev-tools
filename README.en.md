@@ -2,7 +2,7 @@
 
 [简体中文](./README.md) | English
 
-A local developer toolbox shipped as a **single Rust executable**. Run it and your browser opens with 25 everyday developer tools — no extra runtime, no install steps. Apart from DNS lookups and TCP port probes, everything runs on your machine: no uploads, no telemetry.
+A local developer toolbox shipped as a **single Rust executable**. Run it and your browser opens with 26 everyday developer tools — no extra runtime, no install steps. Apart from DNS lookups and TCP port probes, everything runs on your machine: no uploads, no telemetry.
 
 - **Backend**: [Axum](https://github.com/tokio-rs/axum) 0.8 + Tokio, static assets embedded via [`rust-embed`](https://crates.io/crates/rust-embed)
 - **Frontend**: [Svelte 5](https://svelte.dev/) (runes) + [Vite 6](https://vite.dev/) + TypeScript
@@ -60,6 +60,13 @@ A local developer toolbox shipped as a **single Rust executable**. Run it and yo
 | Network | IP / CIDR | IPv4 and IPv6 subnet maths: network address, mask, usable host range, address scope |
 | System | Linux commands | 127 common commands across 15 categories, with examples and tips |
 | System | Image conversion | PNG / JPEG / GIF / WEBP / BMP / ICO, batch mode, resizing and JPEG quality (100MB per file) |
+| System | Image / PDF watermark | Drop files to preview; multiline text, drag positioning, rotation, color, size, opacity and tiling; save settings, export PNG / JPEG, a PDF page as an image, or all pages as PDF |
+
+### Image / PDF watermark
+
+Open `#/watermark`, drop an image or PDF, customize the watermark and export a new file. PDFs support page navigation; PDF export applies the settings to every page and preserves the original page content. Save watermark settings to reuse the text and style in the same browser.
+
+Supports PNG / JPEG / WebP / BMP / GIF and unencrypted PDFs, up to 100MB per file. GIFs use the first frame. Images export at their original dimensions (up to 16384 pixels per side and 32 megapixels). PDF page images export at 144 DPI, capped at 4096 pixels on the longest side. PDF resources are bundled for offline use.
 
 ## Getting started
 

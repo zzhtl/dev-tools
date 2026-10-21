@@ -243,6 +243,15 @@ export const TOOLS: ToolMeta[] = [
     keywords: ["图片", "image", "转换", "convert", "png", "jpeg", "jpg", "webp", "gif", "ico", "压缩", "缩放"],
     load: () => import("../tools/image_tool/image_tool.svelte"),
   },
+  {
+    id: "watermark",
+    name: "图片 / PDF 水印",
+    icon: "▧",
+    desc: "自定义文字水印、拖动定位与导出",
+    category: "系统工具",
+    keywords: ["水印", "watermark", "图片", "image", "pdf", "文字", "倾斜", "平铺", "导出"],
+    load: () => import("../tools/watermark_tool/watermark_tool.svelte"),
+  },
 ];
 
 export const TOOL_BY_ID = new Map(TOOLS.map((t) => [t.id, t]));

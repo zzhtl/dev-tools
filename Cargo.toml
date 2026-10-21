@@ -1,6 +1,6 @@
 [package]
 name = "dev-tools"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 description = "开发者工具箱：单文件 Rust Web 应用"
 license = "Apache-2.0"

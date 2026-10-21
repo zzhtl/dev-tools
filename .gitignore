@@ -12,6 +12,8 @@
 # 前端依赖与缓存（由 bun 管理）
 /web/node_modules
 /web/.vite
+/web/test-results
+/web/playwright-report
 
 # 编辑器
 /.vscode

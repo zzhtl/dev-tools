@@ -2,7 +2,7 @@
 
 简体中文 | [English](./README.en.md)
 
-一个用 Rust 打包成 **单文件可执行程序** 的本地开发者工具箱：启动后自动在浏览器打开，内置 25 款常用开发工具，无需安装额外依赖，开箱即用。除 DNS 解析、端口探测需要联网外，其余处理全部在本机完成，不上传数据、无遥测。
+一个用 Rust 打包成 **单文件可执行程序** 的本地开发者工具箱：启动后自动在浏览器打开，内置 26 款常用开发工具，无需安装额外依赖，开箱即用。除 DNS 解析、端口探测需要联网外，其余处理全部在本机完成，不上传数据、无遥测。
 
 - **后端**：[Axum](https://github.com/tokio-rs/axum) 0.8 + Tokio，静态资源通过 [`rust-embed`](https://crates.io/crates/rust-embed) 直接嵌入二进制
 - **前端**：[Svelte 5](https://svelte.dev/)（runes）+ [Vite 6](https://vite.dev/) + TypeScript
@@ -60,6 +60,13 @@
 | 网络工具 | IP / CIDR | IPv4 与 IPv6 子网计算：网络地址、掩码、可用主机范围与地址类型 |
 | 系统工具 | Linux 命令 | 内置 15 个分类、127 条常用命令速查，含示例与提示 |
 | 系统工具 | 图片转换 | PNG / JPEG / GIF / WEBP / BMP / ICO 互转，支持批量、缩放与 JPEG 质量调节（单文件上限 100MB） |
+| 系统工具 | 图片 / PDF 水印 | 拖入预览、自定义多行文字、拖动定位、倾斜、颜色 / 字号 / 透明度、整页平铺；保存设置，导出 PNG / JPEG、PDF 当前页图片或全部页 PDF |
+
+### 图片 / PDF 水印
+
+打开「系统工具 → 图片 / PDF 水印」（`#/watermark`），拖入图片或 PDF，调整水印后点击导出即可保存新文件。PDF 可翻页预览，整份导出时所有页面使用同一组设置，并保留原页面内容。「保存水印设置」只保存文字和样式到当前浏览器，供下次使用。
+
+支持 PNG / JPEG / WebP / BMP / GIF 图片和未加密 PDF，单文件上限 100MB；GIF 取首帧。图片按原尺寸导出（边长最多 16384 像素、总像素最多 3200 万）；PDF 当前页图片按 144 DPI 导出，长边最多 4096 像素。PDF 解析资源随程序分发，无需联网。
 
 ## 快速开始
 
@@ -151,6 +158,9 @@ bun install
 bun run dev       # Vite 开发服务器（/api 代理到 127.0.0.1:8927）
 bun run build     # 构建到 ../dist（供 rust-embed 嵌入）
 bun run check     # svelte-check 类型检查
+bun test          # 单元测试
+bunx playwright install chromium  # 首次运行浏览器测试前安装 Chromium
+bun run test:e2e   # 水印拖放、图片 / PDF 导出和布局测试
 ```
 
 ## 项目结构
