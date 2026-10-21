@@ -2,6 +2,8 @@
 
 [简体中文](./README.md) | English
 
+[Download v0.4.0](https://github.com/zzhtl/dev-tools/releases/tag/v0.4.0) · [All releases](https://github.com/zzhtl/dev-tools/releases)
+
 A local developer toolbox shipped as a **single Rust executable**. Run it and your browser opens with 26 everyday developer tools — no extra runtime, no install steps. Apart from DNS lookups and TCP port probes, everything runs on your machine: no uploads, no telemetry.
 
 - **Backend**: [Axum](https://github.com/tokio-rs/axum) 0.8 + Tokio, static assets embedded via [`rust-embed`](https://crates.io/crates/rust-embed)
@@ -13,6 +15,7 @@ A local developer toolbox shipped as a **single Rust executable**. Run it and yo
 - **Single-file distribution** — one executable, frontend assets baked in, no runtime dependencies
 - **Fully offline** — the monospace font ships with the binary, so the UI is complete on air-gapped machines
 - **Local first** — binds `127.0.0.1` by default; switch to `0.0.0.0` for LAN access
+- **Image / PDF watermarks** — drop files to preview, customize text, position, angle, color, size and opacity; tile watermarks, save settings and export
 - **Command palette** — `Ctrl/⌘ K` fuzzy-searches every tool
 - **Light / dark themes** — can follow the system; your choice is remembered
 - **Shareable links** — every tool has its own URL (`#/json`), survives reloads
@@ -62,7 +65,7 @@ A local developer toolbox shipped as a **single Rust executable**. Run it and yo
 | System | Image conversion | PNG / JPEG / GIF / WEBP / BMP / ICO, batch mode, resizing and JPEG quality (100MB per file) |
 | System | Image / PDF watermark | Drop files to preview; multiline text, drag positioning, rotation, color, size, opacity and tiling; save settings, export PNG / JPEG, a PDF page as an image, or all pages as PDF |
 
-### Image / PDF watermark
+### Image / PDF watermark (new in v0.4.0)
 
 Open `#/watermark`, drop an image or PDF, customize the watermark and export a new file. PDFs support page navigation; PDF export applies the settings to every page and preserves the original page content. Save watermark settings to reuse the text and style in the same browser.
 
@@ -91,12 +94,12 @@ The installer detects your OS and architecture, downloads the matching artifact,
 curl -fsSL .../install.sh | sh -s -- --dir /usr/local/bin
 
 # install a specific version
-curl -fsSL .../install.sh | sh -s -- --version v0.3.0
+curl -fsSL .../install.sh | sh -s -- --version v0.4.0
 ```
 
 ### Manual download
 
-Artifacts are published on [GitHub Releases](https://github.com/zzhtl/dev-tools/releases):
+Platform packages and the `SHA256SUMS` checksum file are available on the [v0.4.0 Release page](https://github.com/zzhtl/dev-tools/releases/tag/v0.4.0):
 
 | Platform | Artifact |
 |----------|----------|

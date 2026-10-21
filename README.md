@@ -2,6 +2,8 @@
 
 简体中文 | [English](./README.en.md)
 
+[下载 v0.4.0](https://github.com/zzhtl/dev-tools/releases/tag/v0.4.0) · [全部版本](https://github.com/zzhtl/dev-tools/releases)
+
 一个用 Rust 打包成 **单文件可执行程序** 的本地开发者工具箱：启动后自动在浏览器打开，内置 26 款常用开发工具，无需安装额外依赖，开箱即用。除 DNS 解析、端口探测需要联网外，其余处理全部在本机完成，不上传数据、无遥测。
 
 - **后端**：[Axum](https://github.com/tokio-rs/axum) 0.8 + Tokio，静态资源通过 [`rust-embed`](https://crates.io/crates/rust-embed) 直接嵌入二进制
@@ -13,6 +15,7 @@
 - **单文件分发**：一个可执行文件即可运行，前端资源已打包进二进制，无运行时依赖
 - **完全离线**：等宽字体已随二进制分发，断网、内网环境下界面完整可用
 - **本地优先**：默认仅监听 `127.0.0.1`，可切换 `0.0.0.0` 供同网段访问；数据不出本机
+- **图片 / PDF 水印**：拖入预览，自定义文字、位置、倾斜角度、颜色、字号和透明度，支持平铺、保存设置与导出
 - **命令面板**：`Ctrl/⌘ K` 模糊搜索全部工具，键盘直达
 - **亮色 / 暗色主题**：可跟随系统，选择会被记住
 - **可分享的链接**：每个工具有独立 URL（`#/json`），刷新不丢、可直接发给同事
@@ -62,7 +65,7 @@
 | 系统工具 | 图片转换 | PNG / JPEG / GIF / WEBP / BMP / ICO 互转，支持批量、缩放与 JPEG 质量调节（单文件上限 100MB） |
 | 系统工具 | 图片 / PDF 水印 | 拖入预览、自定义多行文字、拖动定位、倾斜、颜色 / 字号 / 透明度、整页平铺；保存设置，导出 PNG / JPEG、PDF 当前页图片或全部页 PDF |
 
-### 图片 / PDF 水印
+### 图片 / PDF 水印（v0.4.0 新增）
 
 打开「系统工具 → 图片 / PDF 水印」（`#/watermark`），拖入图片或 PDF，调整水印后点击导出即可保存新文件。PDF 可翻页预览，整份导出时所有页面使用同一组设置，并保留原页面内容。「保存水印设置」只保存文字和样式到当前浏览器，供下次使用。
 
@@ -93,12 +96,12 @@ irm https://raw.githubusercontent.com/zzhtl/dev-tools/main/install.ps1 | iex
 curl -fsSL .../install.sh | sh -s -- --dir /usr/local/bin
 
 # 安装指定版本
-curl -fsSL .../install.sh | sh -s -- --version v0.3.0
+curl -fsSL .../install.sh | sh -s -- --version v0.4.0
 ```
 
 ### 手动下载
 
-各平台产物见 [GitHub Releases](https://github.com/zzhtl/dev-tools/releases)：
+各平台安装包及 `SHA256SUMS` 校验文件见 [v0.4.0 Release](https://github.com/zzhtl/dev-tools/releases/tag/v0.4.0)：
 
 | 平台 | 产物 |
 |------|------|
